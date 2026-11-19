@@ -101,6 +101,7 @@ All routes except `/health`, `/auth/register` and `/auth/login` need `Authorizat
 | GET | `/trips/current` | any user |
 | POST | `/trips` | driver: starts the next route in the rotation |
 | POST | `/trips/current/passengers` | passenger: joins the active trip (idempotent) |
+| DELETE | `/trips/current/passengers` | passenger: cancels their seat (idempotent). `409 STOP_ALREADY_CONFIRMED` once picked up |
 | POST | `/trips/current/passengers/:userId/confirm` | driver |
 | POST | `/trips/current/finish` | driver: only when every stop is confirmed |
 | WS | `/ws` | send `{ "type": "auth", "token": "..." }` first. You then receive `{ type: "state", data }` on every change |

@@ -18,6 +18,9 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 - ~~Assumption A1: no self sign-up~~ superseded by S11.
 - **S11** "agrega soporte web junto con la capacidad de registrar usuarios, el usuario chofer lo designaremos manualmente (de momento)". Self sign-up always creates a passenger (name, email, password 8+, address). Drivers are assigned with `scripts/set-role.ts`.
 - **S12** Web support: the app runs in a browser (Expo web) to allow testing without an Android device.
+- **S13** "agregues un boton para cancelarlo pero mas pequeño en la vista de pasajero". A small "Ya no lo usaré" button. Not allowed once the driver confirmed the stop (server-enforced, `STOP_ALREADY_CONFIRMED`).
+- **S14** "preguntas y verificaciones a cualquier accion importante del chofer como empezar o terminar carrera". Confirmation dialogs for start, confirm stop, finish (with summary), and sign-out.
+- **S15** "en la vista del chofer haz que siempre tenga el tache para mostrar que ya esta listo ese empleado y que se ponga en gris los que ya estan listo para que no distraiga la atencion". The check is always shown on the row action. Confirmed rows are greyed out. Assumption: "tache" means the check mark.
 - Assumption A2: one app for both roles; the screen set depends on the logged-in user's role.
 - Assumption A3: finishing with zero passengers is allowed ("all confirmed" is vacuously true).
 
@@ -31,6 +34,8 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 | T4 | S1,S3-S6,S8,S10 | inline | done | tsc clean, expo-doctor 20/20, Android bundle exported; not yet run on a device (pending) |
 | T5 | S11 | inline | done | d3dc214: RED observed (9 tests); 58 tests green incl. Postgres contract |
 | T6 | S11,S12 | inline | done | web e2e in headless Chrome, 7/7 steps, no page errors |
+| T7 | S13 | inline | done | 113b428: RED observed (7 tests); ea55afb: CORS fix found by e2e (RED 2 tests); 70 tests green |
+| T8 | S13-S15 | inline | done | 15e8228: isolated web e2e 8/8 steps, no page errors |
 
 ## Log
 
@@ -42,4 +47,6 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 - **L6** (2026-11-19) User: "este proyecto es completamente diferente al del repositorio survey-app. a partir de ahora ten eso en ecuenta". Engram is scoped to `proyecto-carreras`.
 - **L7** (2026-11-19) User request: "sí, agrega soporte web junto con la capacidad de registrar usuarios, el usuario chofer lo designaremos manualmente (de momento)".
 - **L8** Web: platform files (`secure-storage.web.ts` uses localStorage, `push.web.ts` is a no-op). Alert.alert was replaced with inline errors because Alert is a no-op on web. `/me` refresh picks up role changes without re-login. E2E: driver login → passenger sign-up → live start → live join → confirm → finish → rotate to Norte → set-role promotion. All verified in two browser contexts against docker compose.
+- **L9** (2026-11-19) User request: "ya entre, hiciste un gran trabajo, pero necesito que agregues un boton para cancelarlo pero mas pequeño en la vista de pasajero, y preguntas y verificaciones a cualquier accion importante del chofer como empezar o terminar carrera, en la vista del chofer haz que siempre tenga el tache para mostrar que ya esta listo ese empleado y que se ponga en gris los que ya estan listo para que no distraiga la atencion"
+- **L10** E2E found a latent bug: @fastify/cors only allows GET/HEAD/POST by default, so web DELETE (and PUT /me/push-token) were blocked. Native apps were unaffected. Fixed and pinned with a preflight test. The live deploy was rebuilt reusing the container's JWT secret, so sessions were kept.
 - **Next:** run on devices; rate-limit `/auth/register` and `/auth/login` before public exposure; route ordering (S2 deferred).
