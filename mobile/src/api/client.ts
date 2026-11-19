@@ -22,6 +22,7 @@ const MESSAGES_BY_CODE: Record<string, string> = {
   NO_ACTIVE_TRIP: 'No hay ninguna ruta en curso.',
   TRIP_ALREADY_ACTIVE: 'Ya hay una ruta en curso.',
   PENDING_STOPS: 'Faltan paradas por confirmar.',
+  STOP_ALREADY_CONFIRMED: 'El chofer ya confirmó tu parada.',
   NETWORK: 'No se pudo conectar con el servidor.',
 };
 
@@ -30,7 +31,7 @@ export function errorMessage(error: unknown): string {
   return MESSAGES_BY_CODE.NETWORK!;
 }
 
-type RequestOptions = { method?: 'GET' | 'POST' | 'PUT'; token?: string; body?: unknown };
+type RequestOptions = { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; token?: string; body?: unknown };
 
 async function request<T>(path: string, { method = 'GET', token, body }: RequestOptions = {}): Promise<T> {
   let response: Response;
@@ -76,6 +77,7 @@ export function authenticatedApi(token: string) {
     currentTrip: () => request<TripStateView>('/trips/current', { token }),
     startTrip: () => request<TripStateView>('/trips', { method: 'POST', token }),
     joinTrip: () => request<TripStateView>('/trips/current/passengers', { method: 'POST', token }),
+    leaveTrip: () => request<TripStateView>('/trips/current/passengers', { method: 'DELETE', token }),
     confirmStop: (userId: string) =>
       request<TripStateView>(`/trips/current/passengers/${userId}/confirm`, { method: 'POST', token }),
     finishTrip: () => request<TripStateView>('/trips/current/finish', { method: 'POST', token }),

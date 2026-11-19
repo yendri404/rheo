@@ -25,6 +25,8 @@ export type PassengerTrip = {
   route: RouteName;
   startedAt: string;
   joined: boolean;
+  /** The driver confirmed this stop (picked up); cancelling is no longer allowed. */
+  confirmed: boolean;
 };
 
 export type DriverState = { role: 'driver'; nextRoute: RouteName; activeTrip: DriverTrip | null };

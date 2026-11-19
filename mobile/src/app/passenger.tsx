@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { errorMessage } from '../api/client';
 import { ROUTE_LABELS, type PassengerState } from '../api/types';
 import { useTripState } from '../realtime/use-trip-state';
@@ -27,23 +27,24 @@ function greeting(date = new Date()): string {
 function PassengerScreen() {
   const { session, api, signOut } = useAuthenticated();
   const { state, setState, connected } = useTripState<PassengerState>(session.token, api, signOut);
-  const [joining, setJoining] = useState(false);
+  const [busy, setBusy] = useState<'join' | 'leave' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function join() {
-    setJoining(true);
+  async function run(kind: 'join' | 'leave', action: () => Promise<unknown>) {
+    setBusy(kind);
     setError(null);
     try {
-      setState((await api.joinTrip()) as PassengerState);
+      setState((await action()) as PassengerState);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
-      setJoining(false);
+      setBusy(null);
     }
   }
 
   const trip = state?.activeTrip ?? null;
   const joined = trip?.joined ?? false;
+  const pickedUp = trip?.confirmed ?? false;
 
   return (
     <ScreenLayout
@@ -68,18 +69,35 @@ function PassengerScreen() {
           </View>
           <View style={styles.action}>
             <PrimaryButton
-              label={joined ? 'Confirmado' : 'Usaré el transporte'}
-              onPress={join}
+              label={pickedUp ? 'A bordo' : joined ? 'Confirmado' : 'Usaré el transporte'}
+              onPress={() => run('join', api.joinTrip)}
               disabled={!trip || joined}
-              loading={joining}
+              loading={busy === 'join'}
             />
           </View>
+          {joined && !pickedUp && (
+            <Pressable
+              onPress={() => run('leave', api.leaveTrip)}
+              disabled={busy !== null}
+              hitSlop={10}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.cancel, pressed && styles.cancelPressed]}
+            >
+              {busy === 'leave' ? (
+                <ActivityIndicator color={colors.disabledText} size="small" />
+              ) : (
+                <Text style={styles.cancelLabel}>Ya no lo usaré</Text>
+              )}
+            </Pressable>
+          )}
           <Text style={styles.hint}>
             {!trip
               ? 'Te avisaremos cuando el chofer inicie la ruta.'
-              : joined
-                ? 'El chofer ya te ve en su lista.'
-                : 'Si no vas a usar el transporte, no necesitas hacer nada.'}
+              : pickedUp
+                ? 'El chofer confirmó tu parada. ¡Buen viaje!'
+                : joined
+                  ? 'El chofer ya te ve en su lista.'
+                  : 'Si no vas a usar el transporte, no necesitas hacer nada.'}
           </Text>
           {error && (
             <Text style={styles.error} accessibilityRole="alert">
@@ -98,6 +116,19 @@ const styles = StyleSheet.create({
   caption: { fontFamily: fonts.regular, fontSize: 22, color: colors.dark },
   banner: { marginTop: 14, marginLeft: -8 },
   action: { marginTop: 48 },
+  cancel: {
+    alignSelf: 'center',
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.disabled,
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  cancelPressed: { backgroundColor: colors.disabled },
+  cancelLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.disabledText },
   hint: { fontFamily: fonts.regular, fontSize: 13, color: colors.disabledText, marginTop: 16, textAlign: 'center' },
   error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginTop: 12, textAlign: 'center' },
 });

@@ -2,10 +2,11 @@ import { Redirect } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { errorMessage } from '../api/client';
-import { ROUTE_LABELS, type DriverState } from '../api/types';
+import { ROUTE_LABELS, type DriverPassenger, type DriverState, type DriverTrip, type RouteName } from '../api/types';
 import { useTripState } from '../realtime/use-trip-state';
 import { useAuthenticated, useSession } from '../session/session-context';
 import { Checkmark } from '../ui/checkmark';
+import { useConfirm } from '../ui/confirm-dialog';
 import { PassengerRow } from '../ui/passenger-row';
 import { PrimaryButton } from '../ui/primary-button';
 import { ScreenLayout } from '../ui/screen-layout';
@@ -36,6 +37,54 @@ function DriverScreen() {
     } finally {
       setBusy(null);
     }
+  }
+
+  const { confirm, dialog } = useConfirm();
+
+  async function startTrip(route: RouteName) {
+    const ok = await confirm({
+      title: `¿Empezar la ruta ${ROUTE_LABELS[route]}?`,
+      message: 'Todos los pasajeros recibirán una notificación y podrán anotarse.',
+      confirmLabel: 'Empezar',
+    });
+    if (ok) await run('start', api.startTrip);
+  }
+
+  async function confirmStop(passenger: DriverPassenger) {
+    const ok = await confirm({
+      title: `¿Confirmar parada de ${passenger.name}?`,
+      message: 'Confírmala solo cuando el pasajero ya esté a bordo. No se puede deshacer.',
+      details: [passenger.address || 'Sin dirección'],
+      confirmLabel: 'Confirmar',
+    });
+    if (ok) await run(passenger.userId, () => api.confirmStop(passenger.userId));
+  }
+
+  async function finishTrip(trip: DriverTrip) {
+    const ok = await confirm({
+      title: `¿Terminar la ruta ${ROUTE_LABELS[trip.route]}?`,
+      message: 'Verifica el resumen antes de terminar. No se puede deshacer.',
+      details: [
+        `Pasajeros recogidos: ${trip.passengers.length}`,
+        `Siguiente ruta: ${ROUTE_LABELS[state!.nextRoute]}`,
+      ],
+      confirmLabel: 'Terminar',
+    });
+    if (!ok) return;
+    await run('finish', async () => {
+      const next = await api.finishTrip();
+      setJustFinished(true);
+      return next;
+    });
+  }
+
+  async function askSignOut() {
+    const ok = await confirm({
+      title: '¿Cerrar sesión?',
+      message: state?.activeTrip ? 'Hay una ruta en curso. Seguirá activa y podrás retomarla al volver a entrar.' : undefined,
+      confirmLabel: 'Cerrar sesión',
+    });
+    if (ok) await signOut();
   }
 
   const errorBanner = error && (
@@ -74,14 +123,14 @@ function DriverScreen() {
     return (
       <ScreenLayout
         headerHeight="45%"
-        onSignOut={signOut}
+        onSignOut={askSignOut}
         connected={connected}
         header={<Text style={styles.greeting}>Hola, {session.user.name}</Text>}
         footer={
           <PrimaryButton
             label="Empezar nueva carrera"
             loading={busy === 'start'}
-            onPress={() => run('start', api.startTrip)}
+            onPress={() => startTrip(state.nextRoute)}
           />
         }
       >
@@ -89,6 +138,7 @@ function DriverScreen() {
         <Text style={styles.nextRoute}>{ROUTE_LABELS[state.nextRoute]}</Text>
         <Text style={styles.hint}>Al empezar, todos los pasajeros reciben una notificación.</Text>
         {errorBanner}
+        {dialog}
       </ScreenLayout>
     );
   }
@@ -97,7 +147,7 @@ function DriverScreen() {
 
   return (
     <ScreenLayout
-      onSignOut={signOut}
+      onSignOut={askSignOut}
       connected={connected}
       header={
         <>
@@ -110,13 +160,7 @@ function DriverScreen() {
           label="Terminar ruta"
           disabled={!trip.canFinish}
           loading={busy === 'finish'}
-          onPress={() =>
-            run('finish', async () => {
-              const next = await api.finishTrip();
-              setJustFinished(true);
-              return next;
-            })
-          }
+          onPress={() => finishTrip(trip)}
         />
       }
     >
@@ -137,10 +181,11 @@ function DriverScreen() {
             address={item.address}
             confirmed={item.confirmed}
             loading={busy === item.userId}
-            onConfirm={() => run(item.userId, () => api.confirmStop(item.userId))}
+            onConfirm={() => confirmStop(item)}
           />
         )}
       />
+      {dialog}
     </ScreenLayout>
   );
 }
