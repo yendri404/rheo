@@ -15,7 +15,9 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 - **S8** "al usar el boton de empezar ruta todos los usaurios reciben una notificacion y el usuario puede optar por usar esa ruta o ignorarla por completo" — push via Expo Push Service.
 - **S9** "las necesidades tecnicas son la eficiencia en el backend pero ser agradable de usar en las apps"
 - **S10** UI follows `Main UI.svg`: login (email + password), passenger view ("Proxima Ruta", "Usare el transporte" → "Confirmado"), driver views ("Siguiente Ruta" + "Empezar nueva Carrera", trip list "Ruta: X" with per-row confirm + "Terminar Ruta", "Carrera finalizada" + "Ok"). Palette: primary #2D8665, dark #22393A, background #EAF0F1, disabled #A7BCBE, accent #FFC105; font Comfortaa.
-- Assumption A1: no self sign-up (mockup only has login). Users (role, name, address) are created with a seed/CLI script.
+- ~~Assumption A1: no self sign-up~~ superseded by S11.
+- **S11** "agrega soporte web junto con la capacidad de registrar usuarios, el usuario chofer lo designaremos manualmente (de momento)". Self sign-up always creates a passenger (name, email, password 8+, address). Drivers are assigned with `scripts/set-role.ts`.
+- **S12** Web support: the app runs in a browser (Expo web) to allow testing without an Android device.
 - Assumption A2: one app for both roles; the screen set depends on the logged-in user's role.
 - Assumption A3: finishing with zero passengers is allowed ("all confirmed" is vacuously true).
 
@@ -27,6 +29,8 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 | T2 | S8 | inline | done | cb08d6f: notifier tests green; real delivery needs EAS project + device (pending) |
 | T3 | S1,S9 | inline | done | cb08d6f: contract tests green on Postgres 17; docker compose smoke test passed |
 | T4 | S1,S3-S6,S8,S10 | inline | done | tsc clean, expo-doctor 20/20, Android bundle exported; not yet run on a device (pending) |
+| T5 | S11 | inline | done | d3dc214: RED observed (9 tests); 58 tests green incl. Postgres contract |
+| T6 | S11,S12 | inline | done | web e2e in headless Chrome, 7/7 steps, no page errors |
 
 ## Log
 
@@ -35,4 +39,7 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 - **L3** (2026-11-19) Power outage mid-T1. Four files (ws-hub, views, auth-service, password) were on disk from the interrupted turn without a transcript; they were reviewed after commit 95f81c5, match the design, and were kept.
 - **L4** Backend verified: 47 tests (in-memory + Postgres contract, including concurrent start and join-vs-finish races). The end-to-end smoke test against docker compose passed: start → join pushed over WS → finish blocked (PENDING_STOPS) → confirm → finish → next route norte.
 - **L5** Mobile: Expo SDK 58, Expo Router (per template AGENTS.md). UI copy is in neutral Spanish, matching the mockup. Push needs `eas init` plus a dev build (Expo Go on Android has no remote push). `.env.example` is blocked by local permissions, so the env vars are documented in README instead.
-- **Next:** run on devices, then route ordering (S2 deferred).
+- **L6** (2026-11-19) User: "este proyecto es completamente diferente al del repositorio survey-app. a partir de ahora ten eso en ecuenta". Engram is scoped to `proyecto-carreras`.
+- **L7** (2026-11-19) User request: "sí, agrega soporte web junto con la capacidad de registrar usuarios, el usuario chofer lo designaremos manualmente (de momento)".
+- **L8** Web: platform files (`secure-storage.web.ts` uses localStorage, `push.web.ts` is a no-op). Alert.alert was replaced with inline errors because Alert is a no-op on web. `/me` refresh picks up role changes without re-login. E2E: driver login → passenger sign-up → live start → live join → confirm → finish → rotate to Norte → set-role promotion. All verified in two browser contexts against docker compose.
+- **Next:** run on devices; rate-limit `/auth/register` and `/auth/login` before public exposure; route ordering (S2 deferred).

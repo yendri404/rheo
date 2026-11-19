@@ -30,11 +30,15 @@ Instead of exporting variables, you can put them in a `.env` file next to `docke
 | `POSTGRES_PASSWORD` | recommended | defaults to `carreras` |
 | `EXPO_ACCESS_TOKEN` | no | only if "enhanced push security" is enabled in Expo |
 
-Create real users (there is no self sign-up):
+Passengers sign up from the app ("Crear cuenta"). Sign-up **always** creates a passenger. Drivers are assigned manually:
 
 ```bash
+# Promote an existing account (the app switches to driver screens the next time it opens)
+docker compose exec api node scripts/set-role.ts --email ana@example.com --role driver
+
+# Or create any user directly
 docker compose exec api node scripts/create-user.ts \
-  --email ana@example.com --password 'min-8-chars' --name "Ana" --address "Calle 1 #23" --role passenger
+  --email ana@example.com --password 'min-8-chars' --name "Ana" --address "Calle 1 #23" --role driver
 ```
 
 The schema is applied automatically on every boot (`backend/src/infrastructure/postgres/schema.sql`).
@@ -60,6 +64,15 @@ npm install
 EXPO_PUBLIC_API_URL=http://192.168.1.50:3000 npx expo start
 ```
 
+In the Expo terminal:
+
+- Press **`w`** to open the app in the browser.
+- Scan the QR code with **Expo Go** to open it on a phone.
+
+To test both roles at once, use a second browser window in incognito mode. It gets its own session, because each window keeps its session in its own `localStorage`. For example, the driver in one window and a passenger in the other.
+
+> On web, the session lives in `localStorage` and there are no push notifications. That is fine for testing, but a production web client should use an httpOnly cookie.
+
 **Push notifications** need two things:
 
 1. A physical device.
@@ -69,10 +82,11 @@ Expo Go does not support remote push on Android, so use a development build: `np
 
 ## API
 
-All routes except `/health` and `/auth/login` need `Authorization: Bearer <token>`. Every trip endpoint returns the role-specific state view.
+All routes except `/health`, `/auth/register` and `/auth/login` need `Authorization: Bearer <token>`. Every trip endpoint returns the role-specific state view.
 
 | Method | Path | Who |
 |---|---|---|
+| POST | `/auth/register` `{ name, email, password (8+), address }` | anyone: always creates a passenger, `409 EMAIL_TAKEN` on duplicates |
 | POST | `/auth/login` | anyone |
 | GET | `/me` | any user |
 | PUT | `/me/push-token` `{ token: string \| null }` | any user |

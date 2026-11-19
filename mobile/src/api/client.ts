@@ -17,6 +17,8 @@ export class ApiError extends Error {
 
 const MESSAGES_BY_CODE: Record<string, string> = {
   INVALID_CREDENTIALS: 'Correo o contraseña incorrectos.',
+  EMAIL_TAKEN: 'Ya existe una cuenta con ese correo.',
+  VALIDATION_FAILED: 'Revisa los datos ingresados.',
   NO_ACTIVE_TRIP: 'No hay ninguna ruta en curso.',
   TRIP_ALREADY_ACTIVE: 'Ya hay una ruta en curso.',
   PENDING_STOPS: 'Faltan paradas por confirmar.',
@@ -53,8 +55,16 @@ async function request<T>(path: string, { method = 'GET', token, body }: Request
   return payload as T;
 }
 
+export type AuthResult = { token: string; user: User };
+
 export function login(email: string, password: string) {
-  return request<{ token: string; user: User }>('/auth/login', { method: 'POST', body: { email, password } });
+  return request<AuthResult>('/auth/login', { method: 'POST', body: { email, password } });
+}
+
+export type Registration = { name: string; email: string; password: string; address: string };
+
+export function register(input: Registration) {
+  return request<AuthResult>('/auth/register', { method: 'POST', body: input });
 }
 
 /** Endpoints that need a session. */

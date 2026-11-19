@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { errorMessage } from '../api/client';
 import { ROUTE_LABELS, type DriverState } from '../api/types';
 import { useTripState } from '../realtime/use-trip-state';
@@ -23,17 +23,26 @@ function DriverScreen() {
   const { state, setState, connected } = useTripState<DriverState>(session.token, api, signOut);
   const [busy, setBusy] = useState<string | null>(null);
   const [justFinished, setJustFinished] = useState(false);
+  // Inline instead of Alert.alert, which is a no-op on web.
+  const [error, setError] = useState<string | null>(null);
 
   async function run(key: string, action: () => Promise<unknown>) {
     setBusy(key);
+    setError(null);
     try {
       setState((await action()) as DriverState);
-    } catch (error) {
-      Alert.alert('No se pudo completar', errorMessage(error));
+    } catch (caught) {
+      setError(errorMessage(caught));
     } finally {
       setBusy(null);
     }
   }
+
+  const errorBanner = error && (
+    <Text style={styles.error} accessibilityRole="alert">
+      {error}
+    </Text>
+  );
 
   if (justFinished) {
     return (
@@ -79,6 +88,7 @@ function DriverScreen() {
         <Text style={styles.caption}>Siguiente ruta:</Text>
         <Text style={styles.nextRoute}>{ROUTE_LABELS[state.nextRoute]}</Text>
         <Text style={styles.hint}>Al empezar, todos los pasajeros reciben una notificación.</Text>
+        {errorBanner}
       </ScreenLayout>
     );
   }
@@ -117,6 +127,7 @@ function DriverScreen() {
             ? 'Todas las paradas confirmadas'
             : `${pending} de ${trip.passengers.length} paradas pendientes`}
       </Text>
+      {errorBanner}
       <FlatList
         data={trip.passengers}
         keyExtractor={(passenger) => passenger.userId}
@@ -142,6 +153,7 @@ const styles = StyleSheet.create({
   headerCaption: { fontFamily: fonts.regular, fontSize: 22, color: colors.white },
   headerRoute: { fontFamily: fonts.regular, fontSize: 40, color: colors.background },
   summary: { fontFamily: fonts.regular, fontSize: 14, color: colors.disabledText, marginBottom: 14 },
+  error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginVertical: 12 },
   finishedIcon: {
     alignSelf: 'center',
     marginBottom: 24,
