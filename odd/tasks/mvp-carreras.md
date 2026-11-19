@@ -23,12 +23,16 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 
 | ID | Specs | Route | Status | Evidence |
 |----|-------|-------|--------|----------|
-| T1 | S1,S3-S7 | inline | pending | backend domain + HTTP + realtime |
-| T2 | S8 | inline | pending | push notifications port + Expo adapter |
-| T3 | S1,S9 | inline | pending | Postgres adapter, Docker Compose, seed |
-| T4 | S1,S3-S6,S8,S10 | inline | pending | Expo app |
+| T1 | S1,S3-S7 | inline | done | 95f81c5, 4c9d41a: RED observed, 26 tests green |
+| T2 | S8 | inline | done | cb08d6f: notifier tests green; real delivery needs EAS project + device (pending) |
+| T3 | S1,S9 | inline | done | cb08d6f: contract tests green on Postgres 17; docker compose smoke test passed |
+| T4 | S1,S3-S6,S8,S10 | inline | done | tsc clean, expo-doctor 20/20, Android bundle exported; not yet run on a device (pending) |
 
 ## Log
 
 - **L1** (2026-11-19) User request: "vamos a crear una app en react native, y con un backend a tu desicion que sea facil de mantener y de desplegar  que permita a un chofer gestionar un transporte, de momento lo dejaremos sin nada que tenga que ver con filtrado y apis, primero, chofer debe ser capaz de iniciar una carrera y eso habilitara la app para los demas usuarios, ellos podran marcar que haran uso del transporte y se reflejara en tiempo real en la app del chofer, donde saldra en una lista el nombre del pasajero y su direccion, en esa \"fila\" tendra un boton para confirmar la parada de cada pasajero, una vez todos los pasajeros hayan sido \"confirmados\" el boton de abajo en la ruta podra seleccionar como ruta finalizada y deberia devolverlo al menu de empezar ruta, teniendo 3 rutas diferentes, mañana, norte, sur siendo que cada que inicie una ruta se iran rotando entre turnos, al usar el boton de empezar ruta todos los usaurios reciben una notificacion y el usuario puede optar por usar esa ruta o ignorarla por completo. te deje en el repositorio un SVG con el mockup de la interfaz para que tengas con que trabjar como base. las necesidades tecnicas son la eficiencia en el backend pero ser agradable de usar en las apps que soliciten usarlo buena suerte"
 - **L2** Mockup rendered and read: 4 driver screens, 2 passenger screens, 1 login screen.
+- **L3** (2026-11-19) Power outage mid-T1. Four files (ws-hub, views, auth-service, password) were on disk from the interrupted turn without a transcript; they were reviewed after commit 95f81c5, match the design, and were kept.
+- **L4** Backend verified: 47 tests (in-memory + Postgres contract, including concurrent start and join-vs-finish races). The end-to-end smoke test against docker compose passed: start → join pushed over WS → finish blocked (PENDING_STOPS) → confirm → finish → next route norte.
+- **L5** Mobile: Expo SDK 58, Expo Router (per template AGENTS.md). UI copy is in neutral Spanish, matching the mockup. Push needs `eas init` plus a dev build (Expo Go on Android has no remote push). `.env.example` is blocked by local permissions, so the env vars are documented in README instead.
+- **Next:** run on devices, then route ordering (S2 deferred).

@@ -21,7 +21,7 @@ export class ExpoPushNotifier implements TripNotifier {
       to,
       sound: 'default',
       title: `Ruta ${ROUTE_LABELS[route]} iniciada`,
-      body: 'El chofer comenzó la ruta. Abrí la app si vas a usar el transporte.',
+      body: 'El chofer comenzó la ruta. Abre la app si vas a usar el transporte.',
       data: { type: 'trip.started', route },
     }));
 
