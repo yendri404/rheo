@@ -222,6 +222,17 @@ describe('HTTP API', () => {
     expect((await call('POST', '/trips/current/passengers/00000000-0000-0000-0000-000000000000/confirm', driver)).statusCode).toBe(404);
   });
 
+  it.each(['GET', 'POST', 'PUT', 'DELETE'])('allows %s in CORS preflight so the web client can call it', async (method) => {
+    const { app } = await setupApp();
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/trips/current/passengers',
+      headers: { origin: 'http://localhost:8081', 'access-control-request-method': method },
+    });
+    expect(response.statusCode).toBe(204);
+    expect(String(response.headers['access-control-allow-methods']).split(/,\s*/)).toContain(method);
+  });
+
   it('answers the health check without auth', async () => {
     const { call } = await setupApp();
     expect((await call('GET', '/health')).json()).toEqual({ ok: true });

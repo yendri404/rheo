@@ -59,7 +59,8 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   const { users, hub, tripService, authService } = deps;
   const app = Fastify({ logger: deps.logger ?? false });
 
-  await app.register(cors, { origin: true });
+  // @fastify/cors only allows GET/HEAD/POST by default; browsers would block PUT and DELETE preflights.
+  await app.register(cors, { origin: true, methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'] });
   await app.register(jwt, { secret: deps.jwtSecret, sign: { expiresIn: deps.tokenTtl ?? '30d' } });
   await app.register(websocket, { options: { maxPayload: 4096 } });
 
