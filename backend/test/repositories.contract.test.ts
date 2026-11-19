@@ -1,0 +1,158 @@
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { InMemoryTripRepository } from '../src/infrastructure/memory/in-memory-trip-repository.ts';
+import { InMemoryUserRepository } from '../src/infrastructure/memory/in-memory-user-repository.ts';
+import { connect, migrate, type Sql } from '../src/infrastructure/postgres/database.ts';
+import { PostgresTripRepository } from '../src/infrastructure/postgres/postgres-trip-repository.ts';
+import { PostgresUserRepository } from '../src/infrastructure/postgres/postgres-user-repository.ts';
+import type { TripRepository } from '../src/trips/ports.ts';
+import type { UserRepository } from '../src/users/user.ts';
+
+type Adapters = { users: UserRepository; trips: TripRepository };
+
+const databaseUrl = process.env.TEST_DATABASE_URL;
+let sql: Sql | undefined;
+
+const factories: [string, () => Promise<Adapters>][] = [
+  [
+    'in-memory',
+    async () => {
+      const users = new InMemoryUserRepository();
+      return { users, trips: new InMemoryTripRepository(users) };
+    },
+  ],
+];
+
+if (databaseUrl) {
+  factories.push([
+    'postgres',
+    async () => {
+      sql ??= connect(databaseUrl);
+      await migrate(sql);
+      await sql`TRUNCATE trip_passengers, trips, users`;
+      return { users: new PostgresUserRepository(sql), trips: new PostgresTripRepository(sql) };
+    },
+  ]);
+} else {
+  it.skip('postgres contract (set TEST_DATABASE_URL to run)', () => {});
+}
+
+afterAll(async () => {
+  await sql?.end();
+});
+
+const T0 = new Date('2026-11-19T12:00:00Z');
+const T1 = new Date('2026-11-19T12:05:00Z');
+
+describe.each(factories)('repository contract: %s', (_name, factory) => {
+  let users: UserRepository;
+  let trips: TripRepository;
+
+  beforeEach(async () => {
+    ({ users, trips } = await factory());
+  });
+
+  async function passenger(name: string) {
+    return users.create({ email: `${name}@test.dev`, passwordHash: 'x', name, address: `${name} street`, role: 'passenger' });
+  }
+
+  async function activeTripId(): Promise<string> {
+    return (await trips.findActive())!.id;
+  }
+
+  it('finds users by normalized email and id', async () => {
+    const ana = await users.create({ email: ' Ana@Test.dev ', passwordHash: 'hash', name: 'Ana', address: 'A', role: 'passenger' });
+    expect(await users.findByEmail('ANA@test.dev')).toEqual({ ...ana, passwordHash: 'hash' });
+    expect(await users.findById(ana.id)).toEqual(ana);
+    expect(ana.email).toBe('ana@test.dev');
+  });
+
+  it('moves a push token to the latest user that registers it', async () => {
+    const ana = await passenger('ana');
+    const beto = await passenger('beto');
+    await users.setPushToken(ana.id, 'tok');
+    await users.setPushToken(beto.id, 'tok');
+    expect(await users.pushTokensFor('passenger')).toEqual(['tok']);
+    await users.setPushToken(beto.id, null);
+    expect(await users.pushTokensFor('passenger')).toEqual([]);
+  });
+
+  it('has no active trip and no last route initially', async () => {
+    expect(await trips.findActive()).toBeNull();
+    expect(await trips.lastRoute()).toBeNull();
+  });
+
+  it('allows only one active trip at a time, even with concurrent starts', async () => {
+    const results = await Promise.allSettled([trips.start('manana', T0), trips.start('manana', T0)]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')).toMatchObject({ reason: { code: 'TRIP_ALREADY_ACTIVE' } });
+  });
+
+  it('remembers the route of the latest trip', async () => {
+    await trips.start('manana', T0);
+    await trips.finish(await activeTripId(), T0);
+    await trips.start('norte', T0);
+    expect(await trips.lastRoute()).toBe('norte');
+  });
+
+  it('adds passengers idempotently with their name and address', async () => {
+    const ana = await passenger('ana');
+    await trips.start('sur', T0);
+    const id = await activeTripId();
+
+    expect(await trips.addPassenger(id, ana.id, T0)).toBe('added');
+    expect(await trips.addPassenger(id, ana.id, T1)).toBe('added');
+
+    expect(await trips.findActive()).toEqual({
+      id,
+      route: 'sur',
+      startedAt: T0,
+      passengers: [{ userId: ana.id, name: 'ana', address: 'ana street', joinedAt: T0, confirmedAt: null }],
+    });
+  });
+
+  it('confirms stops idempotently and rejects unknown passengers', async () => {
+    const ana = await passenger('ana');
+    const beto = await passenger('beto');
+    await trips.start('sur', T0);
+    const id = await activeTripId();
+    await trips.addPassenger(id, ana.id, T0);
+
+    expect(await trips.confirmStop(id, ana.id, T0)).toBe('confirmed');
+    expect(await trips.confirmStop(id, ana.id, T1)).toBe('confirmed');
+    expect(await trips.confirmStop(id, beto.id, T0)).toBe('not_in_trip');
+    expect((await trips.findActive())!.passengers[0]!.confirmedAt).toEqual(T0);
+  });
+
+  it('finishes only when every stop is confirmed and rejects writes afterwards', async () => {
+    const ana = await passenger('ana');
+    await trips.start('sur', T0);
+    const id = await activeTripId();
+    await trips.addPassenger(id, ana.id, T0);
+
+    expect(await trips.finish(id, T1)).toBe('pending_stops');
+    await trips.confirmStop(id, ana.id, T0);
+    expect(await trips.finish(id, T1)).toBe('finished');
+
+    expect(await trips.findActive()).toBeNull();
+    expect(await trips.finish(id, T1)).toBe('trip_not_active');
+    expect(await trips.addPassenger(id, ana.id, T1)).toBe('trip_not_active');
+    expect(await trips.confirmStop(id, ana.id, T1)).toBe('not_in_trip');
+  });
+
+  it('never finishes a trip with an unconfirmed passenger under concurrent join and finish', async () => {
+    const ana = await passenger('ana');
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await trips.start('sur', T0);
+      const id = await activeTripId();
+      const [joined, finished] = await Promise.all([trips.addPassenger(id, ana.id, T0), trips.finish(id, T0)]);
+      if (joined === 'added') {
+        // The passenger made it in, so the finish must not have closed the trip over them.
+        expect(finished).toBe('pending_stops');
+        await trips.confirmStop(id, ana.id, T0);
+        expect(await trips.finish(id, T0)).toBe('finished');
+      } else {
+        expect(finished).toBe('finished');
+      }
+    }
+  });
+});

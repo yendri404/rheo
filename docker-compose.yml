@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: carreras
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-carreras}
+      POSTGRES_DB: carreras
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U carreras -d carreras"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://carreras:${POSTGRES_PASSWORD:-carreras}@db:5432/carreras
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+
+volumes:
+  db-data:

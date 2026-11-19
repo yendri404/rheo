@@ -1,0 +1,41 @@
+import type { TripNotifier } from '../../trips/ports.ts';
+import { ROUTE_LABELS, type RouteName } from '../../trips/route.ts';
+
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const MAX_MESSAGES_PER_REQUEST = 100;
+
+type Fetch = typeof fetch;
+
+/** Sends through Expo's free push service, which relays to FCM (Android) and APNs (iOS). */
+export class ExpoPushNotifier implements TripNotifier {
+  readonly #fetch: Fetch;
+  readonly #accessToken: string | undefined;
+
+  constructor(options: { fetch?: Fetch; accessToken?: string } = {}) {
+    this.#fetch = options.fetch ?? fetch;
+    this.#accessToken = options.accessToken;
+  }
+
+  async tripStarted(route: RouteName, pushTokens: string[]): Promise<void> {
+    const messages = pushTokens.map((to) => ({
+      to,
+      sound: 'default',
+      title: `Ruta ${ROUTE_LABELS[route]} iniciada`,
+      body: 'El chofer comenzó la ruta. Abrí la app si vas a usar el transporte.',
+      data: { type: 'trip.started', route },
+    }));
+
+    for (let i = 0; i < messages.length; i += MAX_MESSAGES_PER_REQUEST) {
+      const response = await this.#fetch(EXPO_PUSH_URL, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          ...(this.#accessToken ? { authorization: `Bearer ${this.#accessToken}` } : {}),
+        },
+        body: JSON.stringify(messages.slice(i, i + MAX_MESSAGES_PER_REQUEST)),
+      });
+      if (!response.ok) throw new Error(`Expo push failed with HTTP ${response.status}`);
+    }
+  }
+}
