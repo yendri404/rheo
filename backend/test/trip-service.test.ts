@@ -81,6 +81,49 @@ describe('TripService', () => {
     expect(events.published).toHaveLength(3);
   });
 
+  it('lets a passenger cancel before their stop is confirmed, then rejoin', async () => {
+    const { service, driver, ana, events } = await setup();
+    await service.start(driver);
+    await service.join(ana);
+
+    const afterLeave = await service.leave(ana);
+    expect(afterLeave.activeTrip?.passengers).toEqual([]);
+    expect(events.published.at(-1)).toEqual(afterLeave);
+
+    const afterRejoin = await service.join(ana);
+    expect(afterRejoin.activeTrip?.passengers.map((p) => p.userId)).toEqual([ana.id]);
+  });
+
+  it('treats cancelling without having joined as a no-op', async () => {
+    const { service, driver, ana } = await setup();
+    await service.start(driver);
+    expect((await service.leave(ana)).activeTrip?.passengers).toEqual([]);
+  });
+
+  it('rejects cancelling once the driver confirmed the stop', async () => {
+    const { service, driver, ana } = await setup();
+    await service.start(driver);
+    await service.join(ana);
+    await service.confirmStop(driver, ana.id);
+
+    await expect(service.leave(ana)).rejects.toMatchObject({ code: 'STOP_ALREADY_CONFIRMED' });
+  });
+
+  it('rejects cancelling with no active trip or as the driver', async () => {
+    const { service, driver, ana } = await setup();
+    await expect(service.leave(ana)).rejects.toMatchObject({ code: 'NO_ACTIVE_TRIP' });
+    await service.start(driver);
+    await expect(service.leave(driver)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('lets the driver finish once the only pending passenger cancels', async () => {
+    const { service, driver, ana } = await setup();
+    await service.start(driver);
+    await service.join(ana);
+    await service.leave(ana);
+    expect((await service.finish(driver)).activeTrip).toBeNull();
+  });
+
   it('confirms a passenger stop', async () => {
     const { service, driver, ana } = await setup();
     await service.start(driver);

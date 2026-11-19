@@ -52,6 +52,18 @@ export class TripService {
     return this.#publish();
   }
 
+  /** Passenger cancels their seat. Idempotent; refused once the driver picked them up. */
+  async leave(actor: User): Promise<TripState> {
+    requireRole(actor, 'passenger');
+    const trip = await this.#requireActive();
+    const result = await this.#trips.removePassenger(trip.id, actor.id);
+    if (result === 'trip_not_active') throw noActiveTrip();
+    if (result === 'already_confirmed') {
+      throw new AppError('STOP_ALREADY_CONFIRMED', 'The driver already confirmed this stop.');
+    }
+    return result === 'removed' ? this.#publish() : this.state();
+  }
+
   async confirmStop(actor: User, passengerId: string): Promise<TripState> {
     requireRole(actor, 'driver');
     const trip = await this.#requireActive();

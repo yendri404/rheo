@@ -79,6 +79,25 @@ export class PostgresTripRepository implements TripRepository {
     });
   }
 
+  async removePassenger(
+    tripId: string,
+    userId: string,
+  ): Promise<'removed' | 'not_in_trip' | 'already_confirmed' | 'trip_not_active'> {
+    return this.#sql.begin(async (tx) => {
+      // Same shared lock as join, so a cancel cannot interleave with finish.
+      const [trip] = await tx`SELECT 1 FROM trips WHERE id = ${tripId} AND status = 'active' FOR SHARE`;
+      if (!trip) return 'trip_not_active' as const;
+      const removed = await tx`
+        DELETE FROM trip_passengers
+        WHERE trip_id = ${tripId} AND user_id = ${userId} AND confirmed_at IS NULL
+        RETURNING 1`;
+      if (removed.length > 0) return 'removed' as const;
+      const [confirmed] = await tx`
+        SELECT 1 FROM trip_passengers WHERE trip_id = ${tripId} AND user_id = ${userId}`;
+      return confirmed ? ('already_confirmed' as const) : ('not_in_trip' as const);
+    });
+  }
+
   async confirmStop(tripId: string, userId: string, at: Date): Promise<'confirmed' | 'not_in_trip'> {
     const rows = await this.#sql`
       UPDATE trip_passengers tp SET confirmed_at = COALESCE(tp.confirmed_at, ${at})

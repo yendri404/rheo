@@ -17,6 +17,8 @@ export type PassengerTripView = {
   route: RouteName;
   startedAt: string;
   joined: boolean;
+  /** The driver confirmed this passenger's stop (picked up); cancelling is no longer allowed. */
+  confirmed: boolean;
 };
 
 export type StateView =
@@ -43,6 +45,7 @@ export function viewFor(state: TripState, user: User): StateView {
       },
     };
   }
+  const own = trip?.passengers.find((passenger) => passenger.userId === user.id);
   return {
     role: 'passenger',
     nextRoute: state.nextRoute,
@@ -50,7 +53,8 @@ export function viewFor(state: TripState, user: User): StateView {
       id: trip.id,
       route: trip.route,
       startedAt: trip.startedAt.toISOString(),
-      joined: trip.passengers.some((passenger) => passenger.userId === user.id),
+      joined: own !== undefined,
+      confirmed: own?.confirmedAt != null,
     },
   };
 }

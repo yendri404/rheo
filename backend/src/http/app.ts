@@ -35,6 +35,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   TRIP_ALREADY_ACTIVE: 409,
   NO_ACTIVE_TRIP: 409,
   PENDING_STOPS: 409,
+  STOP_ALREADY_CONFIRMED: 409,
   VALIDATION_FAILED: 400,
 };
 
@@ -130,6 +131,11 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   app.post('/trips/current/passengers', async (request) => {
     const user = await currentUser(request);
     return viewFor(await tripService.join(user), user);
+  });
+
+  app.delete('/trips/current/passengers', async (request) => {
+    const user = await currentUser(request);
+    return viewFor(await tripService.leave(user), user);
   });
 
   app.post('/trips/current/passengers/:userId/confirm', async (request) => {

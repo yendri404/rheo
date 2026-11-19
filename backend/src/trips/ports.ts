@@ -18,6 +18,8 @@ export interface TripRepository {
   start(route: RouteName, at: Date): Promise<void>;
   /** Idempotent: joining twice keeps the original join. */
   addPassenger(tripId: string, userId: string, at: Date): Promise<'added' | 'trip_not_active'>;
+  /** A passenger whose stop was already confirmed (picked up) cannot be removed. */
+  removePassenger(tripId: string, userId: string): Promise<'removed' | 'not_in_trip' | 'already_confirmed' | 'trip_not_active'>;
   /** Idempotent: confirming twice keeps the original confirmation time. */
   confirmStop(tripId: string, userId: string, at: Date): Promise<'confirmed' | 'not_in_trip'>;
   finish(tripId: string, at: Date): Promise<'finished' | 'pending_stops' | 'trip_not_active'>;

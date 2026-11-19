@@ -32,7 +32,7 @@ async function setupApp() {
     return response.json().token;
   }
 
-  async function call(method: 'GET' | 'POST' | 'PUT', url: string, token?: string, payload?: object) {
+  async function call(method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, token?: string, payload?: object) {
     return app.inject({ method, url, payload, headers: token ? { authorization: `Bearer ${token}` } : {} });
   }
 
@@ -163,7 +163,13 @@ describe('HTTP API', () => {
 
     const joined = await call('POST', '/trips/current/passengers', passenger);
     expect(joined.statusCode).toBe(200);
-    expect(joined.json().activeTrip).toEqual({ id: expect.any(String), route: 'manana', startedAt: expect.any(String), joined: true });
+    expect(joined.json().activeTrip).toEqual({
+      id: expect.any(String),
+      route: 'manana',
+      startedAt: expect.any(String),
+      joined: true,
+      confirmed: false,
+    });
 
     const driverView = (await call('GET', '/trips/current', driver)).json();
     expect(driverView.activeTrip.passengers).toEqual([{ userId: ana.id, name: 'Ana', address: 'Calle 1', confirmed: false }]);
@@ -179,6 +185,29 @@ describe('HTTP API', () => {
     const finished = await call('POST', '/trips/current/finish', driver);
     expect(finished.statusCode).toBe(200);
     expect(finished.json()).toEqual({ role: 'driver', nextRoute: 'norte', activeTrip: null });
+  });
+
+  it('lets a passenger cancel and shows whether their stop was confirmed', async () => {
+    const { call, login, ana } = await setupApp();
+    const driver = await login('driver@test.dev');
+    const passenger = await login('ana@test.dev');
+    await call('POST', '/trips', driver);
+
+    const joined = (await call('POST', '/trips/current/passengers', passenger)).json();
+    expect(joined.activeTrip).toMatchObject({ joined: true, confirmed: false });
+
+    const cancelled = await call('DELETE', '/trips/current/passengers', passenger);
+    expect(cancelled.statusCode).toBe(200);
+    expect(cancelled.json().activeTrip).toMatchObject({ joined: false, confirmed: false });
+    expect((await call('GET', '/trips/current', driver)).json().activeTrip.passengers).toEqual([]);
+
+    await call('POST', '/trips/current/passengers', passenger);
+    await call('POST', `/trips/current/passengers/${ana.id}/confirm`, driver);
+    expect((await call('GET', '/trips/current', passenger)).json().activeTrip).toMatchObject({ joined: true, confirmed: true });
+
+    const tooLate = await call('DELETE', '/trips/current/passengers', passenger);
+    expect(tooLate.statusCode).toBe(409);
+    expect(tooLate.json().error.code).toBe('STOP_ALREADY_CONFIRMED');
   });
 
   it('maps domain errors to HTTP status codes', async () => {

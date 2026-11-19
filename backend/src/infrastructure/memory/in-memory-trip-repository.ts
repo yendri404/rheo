@@ -47,6 +47,19 @@ export class InMemoryTripRepository implements TripRepository {
     return 'added';
   }
 
+  async removePassenger(
+    tripId: string,
+    userId: string,
+  ): Promise<'removed' | 'not_in_trip' | 'already_confirmed' | 'trip_not_active'> {
+    const trip = this.#activeById(tripId);
+    if (!trip) return 'trip_not_active';
+    const index = trip.passengers.findIndex((passenger) => passenger.userId === userId);
+    if (index === -1) return 'not_in_trip';
+    if (trip.passengers[index]!.confirmedAt !== null) return 'already_confirmed';
+    trip.passengers.splice(index, 1);
+    return 'removed';
+  }
+
   async confirmStop(tripId: string, userId: string, at: Date): Promise<'confirmed' | 'not_in_trip'> {
     const passenger = this.#activeById(tripId)?.passengers.find((candidate) => candidate.userId === userId);
     if (!passenger) return 'not_in_trip';

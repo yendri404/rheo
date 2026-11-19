@@ -137,6 +137,24 @@ describe.each(factories)('repository contract: %s', (_name, factory) => {
     expect((await trips.findActive())!.passengers[0]!.confirmedAt).toEqual(T0);
   });
 
+  it('removes only unconfirmed passengers', async () => {
+    const ana = await passenger('ana');
+    const beto = await passenger('beto');
+    await trips.start('sur', T0);
+    const id = await activeTripId();
+    await trips.addPassenger(id, ana.id, T0);
+    await trips.addPassenger(id, beto.id, T0);
+    await trips.confirmStop(id, beto.id, T0);
+
+    expect(await trips.removePassenger(id, ana.id)).toBe('removed');
+    expect(await trips.removePassenger(id, ana.id)).toBe('not_in_trip');
+    expect(await trips.removePassenger(id, beto.id)).toBe('already_confirmed');
+    expect((await trips.findActive())!.passengers.map((p) => p.userId)).toEqual([beto.id]);
+
+    await trips.finish(id, T1);
+    expect(await trips.removePassenger(id, beto.id)).toBe('trip_not_active');
+  });
+
   it('finishes only when every stop is confirmed and rejects writes afterwards', async () => {
     const ana = await passenger('ana');
     await trips.start('sur', T0);

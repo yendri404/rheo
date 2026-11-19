@@ -7,6 +7,7 @@ export type ErrorCode =
   | 'NO_ACTIVE_TRIP'
   | 'PASSENGER_NOT_IN_TRIP'
   | 'PENDING_STOPS'
+  | 'STOP_ALREADY_CONFIRMED'
   | 'VALIDATION_FAILED';
 
 export class AppError extends Error {
