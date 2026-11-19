@@ -1,5 +1,6 @@
 import { normalizeEmail, type NewUser, type Role, type User, type UserRepository, type UserWithCredentials } from '../../users/user.ts';
-import type { Sql } from './database.ts';
+import { emailTaken } from '../../users/errors.ts';
+import { isUniqueViolation, type Sql } from './database.ts';
 
 type UserRow = { id: string; email: string; name: string; address: string; role: Role; password_hash: string };
 
@@ -11,11 +12,21 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   async create(user: NewUser): Promise<User> {
-    const [row] = await this.#sql<UserRow[]>`
-      INSERT INTO users (email, password_hash, name, address, role)
-      VALUES (${normalizeEmail(user.email)}, ${user.passwordHash}, ${user.name}, ${user.address}, ${user.role})
-      RETURNING id, email, name, address, role, password_hash`;
-    return toUser(row!);
+    try {
+      const [row] = await this.#sql<UserRow[]>`
+        INSERT INTO users (email, password_hash, name, address, role)
+        VALUES (${normalizeEmail(user.email)}, ${user.passwordHash}, ${user.name}, ${user.address}, ${user.role})
+        RETURNING id, email, name, address, role, password_hash`;
+      return toUser(row!);
+    } catch (error) {
+      if (isUniqueViolation(error, 'users_email_key')) throw emailTaken();
+      throw error;
+    }
+  }
+
+  async setRole(email: string, role: Role): Promise<boolean> {
+    const rows = await this.#sql`UPDATE users SET role = ${role} WHERE email = ${normalizeEmail(email)} RETURNING 1`;
+    return rows.length > 0;
   }
 
   async findById(id: string): Promise<User | null> {

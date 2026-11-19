@@ -29,6 +29,7 @@ export type AppDependencies = {
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
   UNAUTHENTICATED: 401,
   INVALID_CREDENTIALS: 401,
+  EMAIL_TAKEN: 409,
   FORBIDDEN: 403,
   PASSENGER_NOT_IN_TRIP: 404,
   TRIP_ALREADY_ACTIVE: 409,
@@ -40,7 +41,15 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
 const WS_AUTH_TIMEOUT_MS = 5_000;
 const WS_UNAUTHORIZED = 4401;
 
-const loginBody = z.object({ email: z.string().trim().toLowerCase().pipe(z.email()), password: z.string().min(1).max(200) });
+const emailField = z.string().trim().toLowerCase().pipe(z.email().max(254));
+const loginBody = z.object({ email: emailField, password: z.string().min(1).max(200) });
+// Unknown keys such as "role" are stripped: sign-up can never pick the driver role.
+const registerBody = z.object({
+  name: z.string().trim().min(1).max(100),
+  email: emailField,
+  password: z.string().min(8).max(200),
+  address: z.string().trim().min(1).max(300),
+});
 const pushTokenBody = z.object({ token: z.string().min(1).max(300).nullable() });
 const passengerParams = z.object({ userId: z.uuid() });
 const wsAuthMessage = z.object({ type: z.literal('auth'), token: z.string() });
@@ -92,6 +101,11 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     const { email, password } = loginBody.parse(request.body);
     const user = await authService.login(email, password);
     return { token: app.jwt.sign({ sub: user.id }), user };
+  });
+
+  app.post('/auth/register', async (request, reply) => {
+    const user = await authService.register(registerBody.parse(request.body));
+    return reply.status(201).send({ token: app.jwt.sign({ sub: user.id }), user });
   });
 
   app.get('/me', async (request) => currentUser(request));

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { emailTaken } from '../../users/errors.ts';
 import { normalizeEmail, type NewUser, type Role, type User, type UserRepository, type UserWithCredentials } from '../../users/user.ts';
 
 /** Test and local-dev adapter. */
@@ -8,11 +9,19 @@ export class InMemoryUserRepository implements UserRepository {
   async create(input: NewUser): Promise<User> {
     const email = normalizeEmail(input.email);
     if ([...this.#users.values()].some((user) => user.email === email)) {
-      throw new Error(`User ${email} already exists`);
+      throw emailTaken();
     }
     const user = { ...input, email, id: randomUUID(), pushToken: null };
     this.#users.set(user.id, user);
     return toUser(user);
+  }
+
+  async setRole(email: string, role: Role): Promise<boolean> {
+    const wanted = normalizeEmail(email);
+    const user = [...this.#users.values()].find((candidate) => candidate.email === wanted);
+    if (!user) return false;
+    user.role = role;
+    return true;
   }
 
   async findById(id: string): Promise<User | null> {

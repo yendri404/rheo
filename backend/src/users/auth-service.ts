@@ -19,4 +19,15 @@ export class AuthService {
     const { passwordHash: _omit, ...user } = found;
     return user;
   }
+
+  /** Self sign-up always creates a passenger. Drivers are promoted manually (scripts/set-role.ts). */
+  async register(input: { name: string; email: string; password: string; address: string }): Promise<User> {
+    return this.#users.create({
+      name: input.name,
+      email: input.email,
+      address: input.address,
+      role: 'passenger',
+      passwordHash: await hashPassword(input.password),
+    });
+  }
 }

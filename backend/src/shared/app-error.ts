@@ -1,6 +1,7 @@
 export type ErrorCode =
   | 'UNAUTHENTICATED'
   | 'INVALID_CREDENTIALS'
+  | 'EMAIL_TAKEN'
   | 'FORBIDDEN'
   | 'TRIP_ALREADY_ACTIVE'
   | 'NO_ACTIVE_TRIP'

@@ -66,6 +66,20 @@ describe.each(factories)('repository contract: %s', (_name, factory) => {
     expect(ana.email).toBe('ana@test.dev');
   });
 
+  it('rejects a duplicate email with EMAIL_TAKEN', async () => {
+    await users.create({ email: 'ana@test.dev', passwordHash: 'x', name: 'Ana', address: 'A', role: 'passenger' });
+    await expect(
+      users.create({ email: ' ANA@test.dev', passwordHash: 'x', name: 'Ana 2', address: 'B', role: 'passenger' }),
+    ).rejects.toMatchObject({ code: 'EMAIL_TAKEN' });
+  });
+
+  it('changes a user role by email', async () => {
+    const ana = await users.create({ email: 'ana@test.dev', passwordHash: 'x', name: 'Ana', address: 'A', role: 'passenger' });
+    expect(await users.setRole('ANA@test.dev', 'driver')).toBe(true);
+    expect((await users.findById(ana.id))!.role).toBe('driver');
+    expect(await users.setRole('ghost@test.dev', 'driver')).toBe(false);
+  });
+
   it('moves a push token to the latest user that registers it', async () => {
     const ana = await passenger('ana');
     const beto = await passenger('beto');
