@@ -22,7 +22,15 @@ docker compose up -d --build
 docker compose exec api node scripts/seed.ts
 ```
 
-Instead of exporting variables, you can put them in a `.env` file next to `docker-compose.yml`. Docker Compose reads it automatically.
+Instead of exporting variables, you can put them in a `.env` file next to `docker-compose.yml`. Docker Compose reads it automatically. Without `JWT_SECRET`, compose refuses to start on purpose.
+
+On Windows PowerShell, create the `.env` file with:
+
+```powershell
+$secret = node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+"JWT_SECRET=$secret" | Set-Content -Encoding ascii .env   # ascii: no BOM, which compose cannot parse
+docker compose up -d --build
+```
 
 | Variable | Required | Notes |
 |---|---|---|
