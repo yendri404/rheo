@@ -1,0 +1,34 @@
+# MVP carreras
+
+Objective: driver/passenger transport app (React Native + backend) with realtime trip management and route rotation.
+Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (backend), `tsc --noEmit` (mobile).
+
+## Specs
+
+- **S1** Stack: "vamos a crear una app en react native, y con un backend a tu desicion que sea facil de mantener y de desplegar". Decision: Expo (React Native) app; Node + TypeScript + Fastify + PostgreSQL backend, shipped with Docker Compose.
+- **S2** Out of scope for now: "de momento lo dejaremos sin nada que tenga que ver con filtrado y apis" (no route ordering, no maps APIs).
+- **S3** "chofer debe ser capaz de iniciar una carrera y eso habilitara la app para los demas usuarios"
+- **S4** "ellos podran marcar que haran uso del transporte y se reflejara en tiempo real en la app del chofer, donde saldra en una lista el nombre del pasajero y su direccion"
+- **S5** "en esa \"fila\" tendra un boton para confirmar la parada de cada pasajero"
+- **S6** "una vez todos los pasajeros hayan sido \"confirmados\" el boton de abajo en la ruta podra seleccionar como ruta finalizada y deberia devolverlo al menu de empezar ruta"
+- **S7** "teniendo 3 rutas diferentes, mañana, norte, sur siendo que cada que inicie una ruta se iran rotando entre turnos" — rotation order Mañana → Norte → Sur → Mañana.
+- **S8** "al usar el boton de empezar ruta todos los usaurios reciben una notificacion y el usuario puede optar por usar esa ruta o ignorarla por completo" — push via Expo Push Service.
+- **S9** "las necesidades tecnicas son la eficiencia en el backend pero ser agradable de usar en las apps"
+- **S10** UI follows `Main UI.svg`: login (email + password), passenger view ("Proxima Ruta", "Usare el transporte" → "Confirmado"), driver views ("Siguiente Ruta" + "Empezar nueva Carrera", trip list "Ruta: X" with per-row confirm + "Terminar Ruta", "Carrera finalizada" + "Ok"). Palette: primary #2D8665, dark #22393A, background #EAF0F1, disabled #A7BCBE, accent #FFC105; font Comfortaa.
+- Assumption A1: no self sign-up (mockup only has login). Users (role, name, address) are created with a seed/CLI script.
+- Assumption A2: one app for both roles; the screen set depends on the logged-in user's role.
+- Assumption A3: finishing with zero passengers is allowed ("all confirmed" is vacuously true).
+
+## Tasks
+
+| ID | Specs | Route | Status | Evidence |
+|----|-------|-------|--------|----------|
+| T1 | S1,S3-S7 | inline | pending | backend domain + HTTP + realtime |
+| T2 | S8 | inline | pending | push notifications port + Expo adapter |
+| T3 | S1,S9 | inline | pending | Postgres adapter, Docker Compose, seed |
+| T4 | S1,S3-S6,S8,S10 | inline | pending | Expo app |
+
+## Log
+
+- **L1** (2026-11-19) User request: "vamos a crear una app en react native, y con un backend a tu desicion que sea facil de mantener y de desplegar  que permita a un chofer gestionar un transporte, de momento lo dejaremos sin nada que tenga que ver con filtrado y apis, primero, chofer debe ser capaz de iniciar una carrera y eso habilitara la app para los demas usuarios, ellos podran marcar que haran uso del transporte y se reflejara en tiempo real en la app del chofer, donde saldra en una lista el nombre del pasajero y su direccion, en esa \"fila\" tendra un boton para confirmar la parada de cada pasajero, una vez todos los pasajeros hayan sido \"confirmados\" el boton de abajo en la ruta podra seleccionar como ruta finalizada y deberia devolverlo al menu de empezar ruta, teniendo 3 rutas diferentes, mañana, norte, sur siendo que cada que inicie una ruta se iran rotando entre turnos, al usar el boton de empezar ruta todos los usaurios reciben una notificacion y el usuario puede optar por usar esa ruta o ignorarla por completo. te deje en el repositorio un SVG con el mockup de la interfaz para que tengas con que trabjar como base. las necesidades tecnicas son la eficiencia en el backend pero ser agradable de usar en las apps que soliciten usarlo buena suerte"
+- **L2** Mockup rendered and read: 4 driver screens, 2 passenger screens, 1 login screen.
