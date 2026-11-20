@@ -18,8 +18,13 @@ type Props = {
   /** Short messages (or an illustration) shown on the green background. */
   header?: ReactNode;
   children: ReactNode;
-  /** Primary action, pinned to the bottom of the screen. */
+  /** Primary action, pinned to the bottom of the screen (see `footerPosition`). */
   footer?: ReactNode;
+  /**
+   * - `pinned`: the footer floats at the bottom of the screen (and rides up with the keyboard).
+   * - `inline`: the footer sits right after the content and scrolls with it (forms with a keyboard).
+   */
+  footerPosition?: 'pinned' | 'inline';
   onSignOut?: () => void;
   connected?: boolean;
   /** Changing it replays the entrance animation (header fades in, sheet content springs up). */
@@ -50,6 +55,7 @@ export function ScreenLayout({
   header,
   children,
   footer,
+  footerPosition = 'pinned',
   onSignOut,
   connected = true,
   contentKey = 'default',
@@ -75,6 +81,8 @@ export function ScreenLayout({
 
   const topBarHeight = insets.top + TOP_BAR_HEIGHT;
   const hugContent = sheet === 'content';
+  const pinnedFooter = footerPosition === 'pinned' ? footer : null;
+  const inlineFooter = footerPosition === 'inline' ? footer : null;
   const headerHeight = headerMeasure?.key === contentKey ? headerMeasure.height : null;
   const ready = headerHeight !== null && sheetHeight !== null && viewportHeight !== null;
   // Green area above the sheet: just the header when filling, everything left over when hugging content.
@@ -181,19 +189,20 @@ export function ScreenLayout({
         >
           <Animated.View key={contentKey} entering={motion.sheetEnter}>
             {children}
+            {inlineFooter && <View style={styles.inlineFooter}>{inlineFooter}</View>}
           </Animated.View>
           {/* Room for the pinned footer. A child, not paddingBottom: on web onLayout uses a
               content-box ResizeObserver, which does not fire when only padding changes. */}
-          <View style={{ height: footerHeight + 24 }} />
+          <View style={{ height: (pinnedFooter ? footerHeight : insets.bottom) + 24 }} />
         </View>
       </Animated.ScrollView>
 
-      {footer && (
+      {pinnedFooter && (
         <View
           style={[styles.footer, !hugContent && styles.footerOverContent, { paddingBottom: insets.bottom + 16 }]}
           onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}
         >
-          {footer}
+          {pinnedFooter}
         </View>
       )}
     </View>
@@ -250,6 +259,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     backgroundColor: colors.background,
   },
+  inlineFooter: { marginTop: 24 },
   // Only where content can scroll beneath it: a soft upward shadow reads as content passing under.
   footerOverContent: { boxShadow: '0px -6px 14px rgba(0, 0, 0, 0.08)' },
 });

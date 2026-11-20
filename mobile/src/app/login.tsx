@@ -34,9 +34,10 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScreenLayout
+        footerPosition="inline"
         header={
           <>
-            <Text style={styles.title}>Proyecto Carreras</Text>
+            <Text style={styles.title}>Rheo</Text>
             <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
           </>
         }
