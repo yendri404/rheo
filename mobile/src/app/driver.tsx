@@ -97,24 +97,19 @@ function DriverScreen() {
 
   if (justFinished) {
     return (
+      // Mockup: big white check on the green background, short sheet with the message and "Ok".
       <ScreenLayout
         contentKey="finished"
+        sheet="content"
+        headerAlign="center"
         header={
-          <>
-            <Text style={styles.headerCaption}>¡Buen trabajo!</Text>
-            <Text style={styles.headerTitle}>Carrera finalizada</Text>
-          </>
+          <Animated.View entering={motion.pop} style={styles.finishedIcon} accessibilityLabel="Ruta completada">
+            <Checkmark size={72} strokeWidth={7} color={colors.background} />
+          </Animated.View>
         }
         footer={<PrimaryButton label="Ok" onPress={() => setJustFinished(false)} />}
       >
-        <Animated.View entering={motion.pop} style={styles.finishedIcon}>
-          <Checkmark size={64} strokeWidth={6} color={colors.primary} />
-        </Animated.View>
-        {state && (
-          <Text style={styles.finishedText}>
-            Siguiente ruta: <Text style={styles.finishedRoute}>{ROUTE_LABELS[state.nextRoute]}</Text>
-          </Text>
-        )}
+        <Text style={styles.finishedText}>Carrera finalizada</Text>
       </ScreenLayout>
     );
   }
@@ -136,18 +131,12 @@ function DriverScreen() {
 
   if (!trip) {
     return (
+      // Mockup: the green area stays empty (reserved for future illustrations); the sheet hugs its content.
       <ScreenLayout
         contentKey="home"
+        sheet="content"
         onSignOut={askSignOut}
         connected={connected}
-        header={
-          <>
-            <Text style={styles.headerCaption}>Hola,</Text>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {session.user.name}
-            </Text>
-          </>
-        }
         footer={
           <PrimaryButton
             label="Empezar nueva carrera"
@@ -158,7 +147,6 @@ function DriverScreen() {
       >
         <Text style={styles.caption}>Siguiente ruta:</Text>
         <Text style={styles.nextRoute}>{ROUTE_LABELS[state.nextRoute]}</Text>
-        <Text style={styles.hint}>Al empezar, todos los pasajeros reciben una notificación.</Text>
         {errorBanner}
         {dialog}
       </ScreenLayout>
@@ -226,22 +214,27 @@ const styles = StyleSheet.create({
   headerTitle: { fontFamily: fonts.regular, fontSize: 40, color: colors.background },
   // Translucency lives in the color: the entering animation owns opacity.
   headerStatus: { fontFamily: fonts.regular, fontSize: 15, color: 'rgba(234, 240, 241, 0.85)', marginTop: 6 },
-  caption: { fontFamily: fonts.regular, fontSize: 18, color: colors.dark },
-  nextRoute: { fontFamily: fonts.regular, fontSize: 44, color: colors.dark, marginTop: 12 },
-  hint: { fontFamily: fonts.regular, fontSize: 13, color: colors.disabledText, marginTop: 24 },
+  caption: { fontFamily: fonts.regular, fontSize: 18, color: colors.dark, marginTop: 16 },
+  // Generous bottom space mirrors the mockup's proportions (sheet ~half the screen).
+  nextRoute: { fontFamily: fonts.regular, fontSize: 44, color: colors.dark, marginTop: 20, marginBottom: 120 },
   empty: { fontFamily: fonts.regular, fontSize: 14, color: colors.disabledText, textAlign: 'center', marginTop: 24 },
   error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginBottom: 12 },
   finishedIcon: {
     alignSelf: 'center',
-    marginTop: 16,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 5,
-    borderColor: colors.primary,
+    width: 168,
+    height: 168,
+    borderRadius: 84,
+    borderWidth: 6,
+    borderColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  finishedText: { fontFamily: fonts.regular, fontSize: 18, color: colors.dark, textAlign: 'center', marginTop: 28 },
-  finishedRoute: { fontFamily: fonts.bold, color: colors.primary },
+  finishedText: {
+    fontFamily: fonts.regular,
+    fontSize: 32,
+    color: colors.dark,
+    textAlign: 'center',
+    marginTop: 36,
+    marginBottom: 60,
+  },
 });

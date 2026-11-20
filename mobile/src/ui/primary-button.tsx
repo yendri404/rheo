@@ -9,7 +9,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { COLOR_TRANSITION_MS, motion } from './motion';
+import { COLOR_TRANSITION_MS, motion, springs } from './motion';
 import { colors, fonts, radius } from './theme';
 
 type Props = {
@@ -30,7 +30,7 @@ export function PrimaryButton({ label, onPress, disabled = false, loading = fals
   useEffect(() => {
     enabled.value = withTiming(disabled ? 0 : 1, { duration: COLOR_TRANSITION_MS });
     if (wasDisabled.current && !disabled && !reduceMotion) {
-      scale.value = withSequence(withSpring(1.05, { damping: 8 }), withSpring(1, { damping: 12 }));
+      scale.value = withSequence(withSpring(1.05, springs.popOut), withSpring(1, springs.popBack));
     }
     wasDisabled.current = disabled;
   }, [disabled, reduceMotion, enabled, scale]);

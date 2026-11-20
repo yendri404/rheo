@@ -10,7 +10,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Checkmark } from './checkmark';
-import { COLOR_TRANSITION_MS } from './motion';
+import { COLOR_TRANSITION_MS, springs } from './motion';
 import { colors, fonts, radius } from './theme';
 
 type Props = {
@@ -36,7 +36,7 @@ export function PassengerRow({ name, address, confirmed, loading, onConfirm }: P
   useEffect(() => {
     progress.value = withTiming(confirmed ? 1 : 0, { duration: COLOR_TRANSITION_MS });
     if (confirmed && !reduceMotion) {
-      checkScale.value = withSequence(withSpring(1.35, { damping: 8 }), withSpring(1, { damping: 12 }));
+      checkScale.value = withSequence(withSpring(1.35, springs.popOut), withSpring(1, springs.popBack));
     }
   }, [confirmed, reduceMotion, progress, checkScale]);
 
