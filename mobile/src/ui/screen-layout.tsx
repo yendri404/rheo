@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
@@ -34,6 +35,8 @@ type Props = {
 };
 
 const TOP_BAR_HEIGHT = 40;
+/** Rounded top + handle of the sheet; it sticks to the top when the sheet is fully raised. */
+const SHEET_CAP_HEIGHT = 37;
 
 /**
  * Green app background with a light sheet in front of it.
@@ -115,8 +118,15 @@ export function ScreenLayout({
           </Animated.Text>
         )}
         {onSignOut && (
-          <Pressable onPress={onSignOut} hitSlop={12} accessibilityRole="button">
-            <Text style={styles.signOut}>Cerrar sesión</Text>
+          <Pressable
+            onPress={onSignOut}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar sesión"
+            style={({ pressed }) => [styles.signOut, pressed && styles.signOutPressed]}
+          >
+            <Ionicons name="log-out-outline" size={15} color={colors.background} />
+            <Text style={styles.signOutLabel}>Cerrar sesión</Text>
           </Pressable>
         )}
       </View>
@@ -151,20 +161,24 @@ export function ScreenLayout({
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        // The sheet's cap (rounded top + handle) sticks once it reaches the top: the sheet stops
+        // rising there and only its content keeps scrolling underneath, like a bottom sheet.
+        stickyHeaderIndices={[1]}
       >
         <Animated.View style={spacerStyle} />
+        <View nativeID="sheet" style={[styles.sheetCap, !shown && styles.unplaced]}>
+          <View style={styles.handle} />
+        </View>
         <View
-          nativeID="sheet"
-          onLayout={(event) => setSheetHeight(event.nativeEvent.layout.height)}
+          onLayout={(event) => setSheetHeight(SHEET_CAP_HEIGHT + event.nativeEvent.layout.height)}
           style={[
-            styles.sheet,
+            styles.sheetBody,
             // In fill mode the sheet is tall enough to always slide over the header.
-            !hugContent && { minHeight: (viewportHeight ?? windowHeight - topBarHeight) },
+            !hugContent && { minHeight: (viewportHeight ?? windowHeight - topBarHeight) - SHEET_CAP_HEIGHT },
             // Hidden only until the first measurement places it, so it never flashes at the top.
             !shown && styles.unplaced,
           ]}
         >
-          <View style={styles.handle} />
           <Animated.View key={contentKey} entering={motion.sheetEnter}>
             {children}
           </Animated.View>
@@ -197,27 +211,36 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   offline: { fontFamily: fonts.regular, color: colors.accent, fontSize: 13, flex: 1 },
-  signOut: { fontFamily: fonts.regular, color: colors.background, fontSize: 13, opacity: 0.85 },
+  // Dark pill with an icon, as in the reference design.
+  signOut: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.dark,
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingLeft: 10,
+    paddingRight: 12,
+  },
+  signOutPressed: { opacity: 0.75 },
+  signOutLabel: { fontFamily: fonts.regular, color: colors.background, fontSize: 12 },
   header: { position: 'absolute', left: 0, right: 0 },
   headerContent: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 32 },
   scroll: { flex: 1 },
-  sheet: {
+  sheetCap: {
+    height: SHEET_CAP_HEIGHT,
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.sheet + 8,
     borderTopRightRadius: radius.sheet + 8,
-    paddingHorizontal: 24,
+    alignItems: 'center',
     paddingTop: 12,
-    boxShadow: '0px -10px 28px rgba(0, 0, 0, 0.22)',
+    // Negative spread keeps the shadow above the cap; it must not bleed down onto the body.
+    boxShadow: '0px -14px 24px -10px rgba(0, 0, 0, 0.3)',
+    zIndex: 1,
   },
+  sheetBody: { backgroundColor: colors.background, paddingHorizontal: 24 },
   unplaced: { opacity: 0 },
-  handle: {
-    alignSelf: 'center',
-    width: 44,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.disabled,
-    marginBottom: 20,
-  },
+  handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: colors.disabled },
   footer: {
     position: 'absolute',
     left: 0,
