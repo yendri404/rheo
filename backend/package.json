@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "user:create": "node scripts/create-user.ts",
     "seed": "node scripts/seed.ts",
-    "user:set-role": "node scripts/set-role.ts"
+    "user:set-role": "node scripts/set-role.ts",
+    "simulate:driver": "node scripts/simulate-driver.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.4.3",

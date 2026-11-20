@@ -4,6 +4,7 @@ import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { z, ZodError } from 'zod';
 import type { WsHub } from '../infrastructure/realtime/ws-hub.ts';
+import { registerLocationRoutes } from '../location/location-relay.ts';
 import { AppError, type ErrorCode } from '../shared/app-error.ts';
 import type { TripService } from '../trips/trip-service.ts';
 import { viewFor } from '../trips/views.ts';
@@ -165,6 +166,8 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     });
     socket.once('close', () => clearTimeout(timeout));
   });
+
+  registerLocationRoutes(app, { authenticate: userFromToken, tripService });
 
   app.addHook('onClose', async () => hub.close());
 
