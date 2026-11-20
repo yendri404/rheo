@@ -146,8 +146,12 @@ function PassengerScreen() {
                 near={proximity.near}
                 self={ownLocation.position}
               />
-              {waitingForPickup && ownLocation.denied && (
-                <Text style={styles.locationHint}>Activa tu ubicación para saber cuándo está cerca el chofer.</Text>
+              {waitingForPickup && !ownLocation.position && (
+                <Text style={styles.locationHint}>
+                  {ownLocation.denied
+                    ? 'Activa tu ubicación para saber cuándo está cerca el chofer.'
+                    : 'Buscando tu ubicación… (si el navegador lo pregunta, permite el acceso)'}
+                </Text>
               )}
             </Animated.View>
           )}

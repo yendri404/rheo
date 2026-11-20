@@ -20,6 +20,10 @@ export type DriverMapProps = {
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 const ZOOM = 15;
 const MAP_HEIGHT = 320;
+/** Never zoom in further than this when framing driver + passenger (they may be a few meters apart). */
+const MAX_FIT_ZOOM = 17;
+/** Pixels around the framed markers; the pin is 48px tall above its tip, the attribution ~50px at the bottom. */
+const FIT_PADDING = { top: 64, bottom: 84, left: 40, right: 40 };
 
 // Metro does not emit MapLibre's worker, so it is served from public/ (see scripts/sync-maplibre-worker.mjs).
 if (typeof window !== 'undefined') setWorkerUrl(new URL('/maplibre-gl-worker.mjs', window.location.origin).href);
@@ -60,6 +64,20 @@ function createSelfDot(): HTMLElement {
   return el;
 }
 
+/**
+ * Camera that keeps both the driver and the passenger in view (zooming in as the driver gets
+ * closer). With no passenger position, it simply centers on the driver.
+ */
+function cameraFor(map: MapLibreMap, driver: LatLng, self: LatLng | null) {
+  if (!self) return { center: driver, zoom: ZOOM };
+  const bounds: [[number, number], [number, number]] = [
+    [Math.min(driver.lng, self.lng), Math.min(driver.lat, self.lat)],
+    [Math.max(driver.lng, self.lng), Math.max(driver.lat, self.lat)],
+  ];
+  // Extra bottom room: the attribution box sits there and must not cover either marker.
+  return map.cameraForBounds(bounds, { padding: FIT_PADDING, maxZoom: MAX_FIT_ZOOM }) ?? { center: driver, zoom: ZOOM };
+}
+
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -68,6 +86,8 @@ export function DriverMap({ position, stale, near, self }: DriverMapProps) {
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
   const selfRef = useRef<Marker | null>(null);
+  // Latest passenger position, read by the glide animation without re-creating it.
+  const selfPositionRef = useRef<LatLng | null>(null);
   const shownRef = useRef<{ lng: number; lat: number } | null>(null);
   const frameRef = useRef<number | null>(null);
   const followRef = useRef(true);
@@ -109,7 +129,7 @@ export function DriverMap({ position, stale, near, self }: DriverMapProps) {
     if (!markerRef.current) {
       markerRef.current = new Marker({ element: createPin(), anchor: 'bottom' }).setLngLat(target).addTo(map);
       shownRef.current = target;
-      map.jumpTo({ center: target, zoom: ZOOM });
+      map.jumpTo(cameraFor(map, target, selfPositionRef.current));
       return;
     }
 
@@ -118,7 +138,7 @@ export function DriverMap({ position, stale, near, self }: DriverMapProps) {
     if (prefersReducedMotion()) {
       markerRef.current.setLngLat(target);
       shownRef.current = target;
-      if (followRef.current) map.jumpTo({ center: target });
+      if (followRef.current) map.jumpTo(cameraFor(map, target, selfPositionRef.current));
       return;
     }
     const startedAt = performance.now();
@@ -127,11 +147,13 @@ export function DriverMap({ position, stale, near, self }: DriverMapProps) {
       const point = { lng: from.lng + (target.lng - from.lng) * t, lat: from.lat + (target.lat - from.lat) * t };
       markerRef.current?.setLngLat(point);
       shownRef.current = point;
-      if (followRef.current) map.jumpTo({ center: point });
+      if (followRef.current) map.jumpTo(cameraFor(map, point, selfPositionRef.current));
       frameRef.current = t < 1 ? requestAnimationFrame(step) : null;
     };
     frameRef.current = requestAnimationFrame(step);
   }, [position]);
+
+  selfPositionRef.current = self;
 
   // The passenger's own dot.
   useEffect(() => {
@@ -144,6 +166,8 @@ export function DriverMap({ position, stale, near, self }: DriverMapProps) {
     }
     if (!selfRef.current) selfRef.current = new Marker({ element: createSelfDot() }).setLngLat(self).addTo(map);
     else selfRef.current.setLngLat(self);
+    // Re-frame now too: the driver may be standing still between two fixes.
+    if (followRef.current && shownRef.current) map.jumpTo(cameraFor(map, shownRef.current, self));
   }, [self]);
 
   // Dim the pin when the location is outdated.
@@ -155,7 +179,8 @@ export function DriverMap({ position, stale, near, self }: DriverMapProps) {
   function recenter() {
     followRef.current = true;
     setFollowing(true);
-    if (shownRef.current) mapRef.current?.easeTo({ center: shownRef.current, zoom: ZOOM, duration: 500 });
+    const map = mapRef.current;
+    if (map && shownRef.current) map.easeTo({ ...cameraFor(map, shownRef.current, selfPositionRef.current), duration: 500 });
   }
 
   return (
@@ -173,7 +198,7 @@ export function DriverMap({ position, stale, near, self }: DriverMapProps) {
       )}
       {position && !following && (
         <Pressable onPress={recenter} accessibilityRole="button" style={styles.recenter}>
-          <Text style={styles.recenterText}>Centrar en el chofer</Text>
+          <Text style={styles.recenterText}>{self ? 'Ver al chofer y a mí' : 'Centrar en el chofer'}</Text>
         </Pressable>
       )}
     </MapFrame>
