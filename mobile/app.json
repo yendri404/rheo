@@ -32,6 +32,16 @@
       "expo-secure-store",
       "expo-font",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Rheo usa tu ubicación para mostrar al chofer en el mapa.",
+          "locationAlwaysAndWhenInUsePermission": "Durante una ruta, Rheo comparte tu ubicación con los pasajeros aunque la app esté en segundo plano.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
         "expo-notifications",
         {
           "color": "#2D8665"

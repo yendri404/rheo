@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { errorMessage } from '../api/client';
 import { ROUTE_LABELS, type DriverPassenger, type DriverState, type DriverTrip, type RouteName } from '../api/types';
+import { useDriverTracking } from '../location/use-driver-tracking';
 import { useTripState } from '../realtime/use-trip-state';
 import { useAuthenticated, useSession } from '../session/session-context';
 import { Checkmark } from '../ui/checkmark';
@@ -28,6 +29,7 @@ function DriverScreen() {
   const [justFinished, setJustFinished] = useState(false);
   // Inline instead of Alert.alert, which is a no-op on web.
   const [error, setError] = useState<string | null>(null);
+  const tracking = useDriverTracking(Boolean(state?.activeTrip));
 
   async function run(key: string, action: () => Promise<unknown>) {
     setBusy(key);
@@ -186,6 +188,14 @@ function DriverScreen() {
       }
     >
       {errorBanner}
+      {tracking === 'denied' && (
+        <Text style={styles.notice} accessibilityRole="alert">
+          Activa la ubicación para que los pasajeros vean dónde estás.
+        </Text>
+      )}
+      {tracking === 'foreground' && (
+        <Text style={styles.notice}>Tu ubicación solo se comparte mientras la app está abierta.</Text>
+      )}
       {trip.passengers.length === 0 && (
         <Animated.Text entering={motion.textEnter} style={styles.empty}>
           Los pasajeros aparecerán aquí en cuanto se anoten.
@@ -219,6 +229,7 @@ const styles = StyleSheet.create({
   nextRoute: { fontFamily: fonts.regular, fontSize: 44, color: colors.dark, marginTop: 20, marginBottom: 120 },
   empty: { fontFamily: fonts.regular, fontSize: 14, color: colors.disabledText, textAlign: 'center', marginTop: 24 },
   error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginBottom: 12 },
+  notice: { fontFamily: fonts.regular, fontSize: 14, color: colors.disabledText, marginBottom: 12 },
   finishedIcon: {
     alignSelf: 'center',
     width: 168,

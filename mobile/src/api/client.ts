@@ -1,3 +1,4 @@
+import type { PositionReport } from '../location/position-report';
 import type { TripStateView, User } from './types';
 
 /** Set EXPO_PUBLIC_API_URL to your machine's LAN IP when testing on a physical phone. */
@@ -74,6 +75,8 @@ export function authenticatedApi(token: string) {
     confirmStop: (userId: string) =>
       request<TripStateView>(`/trips/current/passengers/${userId}/confirm`, { method: 'POST', token }),
     finishTrip: () => request<TripStateView>('/trips/current/finish', { method: 'POST', token }),
+    /** Driver only. Fails with 409 NO_ACTIVE_TRIP once the trip is over. */
+    reportLocation: (position: PositionReport) => request<void>('/location', { method: 'POST', token, body: position }),
   };
 }
 

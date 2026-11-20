@@ -3,8 +3,7 @@ import { ApiError, authenticatedApi, login, type AuthenticatedApi, type AuthResu
 import type { User } from '../api/types';
 import { registerForPushNotifications } from '../notifications/push';
 import { secureStorage } from './secure-storage';
-
-const STORAGE_KEY = 'session';
+import { SESSION_STORAGE_KEY as STORAGE_KEY } from './stored-session';
 
 type Session = { token: string; user: User };
 
@@ -39,7 +38,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     secureStorage
       .get(STORAGE_KEY)
-      .then((stored) => setSession(stored ? (JSON.parse(stored) as Session) : null))
+      .then((stored) => {
+        setSession(stored ? (JSON.parse(stored) as Session) : null);
+        // Re-save once so sessions stored before the accessibility change become readable while locked.
+        if (stored) secureStorage.set(STORAGE_KEY, stored).catch(() => {});
+      })
       .catch(() => setSession(null));
   }, []);
 
