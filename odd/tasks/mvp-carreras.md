@@ -21,6 +21,7 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 - **S13** "agregues un boton para cancelarlo pero mas pequeño en la vista de pasajero". A small "Ya no lo usaré" button. Not allowed once the driver confirmed the stop (server-enforced, `STOP_ALREADY_CONFIRMED`).
 - **S14** "preguntas y verificaciones a cualquier accion importante del chofer como empezar o terminar carrera". Confirmation dialogs for start, confirm stop, finish (with summary), and sign-out.
 - **S15** "en la vista del chofer haz que siempre tenga el tache para mostrar que ya esta listo ese empleado y que se ponga en gris los que ya estan listo para que no distraiga la atencion". The check is always shown on the row action. Confirmed rows are greyed out. Assumption: "tache" means the check mark.
+- **S16** "el bloque \"background\" verde sera el fondo total de la app, y en el esapacio restante solo habran mensajes cortos, mientras que el recuardo de mas abajo sera escroleable para que tome el resto de espacio en pantalla dando ese efecto 3d muy sencillo".
 - Assumption A2: one app for both roles; the screen set depends on the logged-in user's role.
 - Assumption A3: finishing with zero passengers is allowed ("all confirmed" is vacuously true).
 
@@ -36,6 +37,7 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 | T6 | S11,S12 | inline | done | web e2e in headless Chrome, 7/7 steps, no page errors |
 | T7 | S13 | inline | done | 113b428: RED observed (7 tests); ea55afb: CORS fix found by e2e (RED 2 tests); 70 tests green |
 | T8 | S13-S15 | inline | done | 15e8228: isolated web e2e 8/8 steps, no page errors |
+| T9 | S16 | inline | done | 22685ed: layout e2e (header opacity 0.85 -> 0 on scroll, footer pinned) + regression 8/8 |
 
 ## Log
 
@@ -49,4 +51,5 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 - **L8** Web: platform files (`secure-storage.web.ts` uses localStorage, `push.web.ts` is a no-op). Alert.alert was replaced with inline errors because Alert is a no-op on web. `/me` refresh picks up role changes without re-login. E2E: driver login → passenger sign-up → live start → live join → confirm → finish → rotate to Norte → set-role promotion. All verified in two browser contexts against docker compose.
 - **L9** (2026-11-19) User request: "ya entre, hiciste un gran trabajo, pero necesito que agregues un boton para cancelarlo pero mas pequeño en la vista de pasajero, y preguntas y verificaciones a cualquier accion importante del chofer como empezar o terminar carrera, en la vista del chofer haz que siempre tenga el tache para mostrar que ya esta listo ese empleado y que se ponga en gris los que ya estan listo para que no distraiga la atencion"
 - **L10** E2E found a latent bug: @fastify/cors only allows GET/HEAD/POST by default, so web DELETE (and PUT /me/push-token) were blocked. Native apps were unaffected. Fixed and pinned with a preflight test. The live deploy was rebuilt reusing the container's JWT secret, so sessions were kept.
+- **L11** (2026-11-20) S16 implemented in ScreenLayout: green root, absolute header that recedes (opacity, scale, drift) on scroll, sheet with minHeight = viewport - top bar so it can always cover the header, primary action pinned. FlatList was replaced by map inside the scrolling sheet (few passengers per route).
 - **Next:** run on devices; rate-limit `/auth/register` and `/auth/login` before public exposure; route ordering (S2 deferred).
