@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { errorMessage } from '../api/client';
 import { ROUTE_LABELS, type DriverPassenger, type DriverState, type DriverTrip, type RouteName } from '../api/types';
 import { useTripState } from '../realtime/use-trip-state';
@@ -96,22 +96,29 @@ function DriverScreen() {
   if (justFinished) {
     return (
       <ScreenLayout
-        headerHeight="55%"
         header={
-          <View style={styles.finishedIcon}>
-            <Checkmark size={64} strokeWidth={6} />
-          </View>
+          <>
+            <Text style={styles.headerCaption}>¡Buen trabajo!</Text>
+            <Text style={styles.headerTitle}>Carrera finalizada</Text>
+          </>
         }
         footer={<PrimaryButton label="Ok" onPress={() => setJustFinished(false)} />}
       >
-        <Text style={styles.finishedText}>Carrera finalizada</Text>
+        <View style={styles.finishedIcon}>
+          <Checkmark size={64} strokeWidth={6} color={colors.primary} />
+        </View>
+        {state && (
+          <Text style={styles.finishedText}>
+            Siguiente ruta: <Text style={styles.finishedRoute}>{ROUTE_LABELS[state.nextRoute]}</Text>
+          </Text>
+        )}
       </ScreenLayout>
     );
   }
 
   if (!state) {
     return (
-      <ScreenLayout header={null} onSignOut={signOut} connected={connected}>
+      <ScreenLayout header={<Text style={styles.headerCaption}>Cargando…</Text>} onSignOut={signOut} connected={connected}>
         <ActivityIndicator color={colors.primary} />
       </ScreenLayout>
     );
@@ -122,10 +129,16 @@ function DriverScreen() {
   if (!trip) {
     return (
       <ScreenLayout
-        headerHeight="45%"
         onSignOut={askSignOut}
         connected={connected}
-        header={<Text style={styles.greeting}>Hola, {session.user.name}</Text>}
+        header={
+          <>
+            <Text style={styles.headerCaption}>Hola,</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {session.user.name}
+            </Text>
+          </>
+        }
         footer={
           <PrimaryButton
             label="Empezar nueva carrera"
@@ -152,7 +165,14 @@ function DriverScreen() {
       header={
         <>
           <Text style={styles.headerCaption}>Ruta:</Text>
-          <Text style={styles.headerRoute}>{ROUTE_LABELS[trip.route]}</Text>
+          <Text style={styles.headerTitle}>{ROUTE_LABELS[trip.route]}</Text>
+          <Text style={styles.headerStatus}>
+            {trip.passengers.length === 0
+              ? 'Esperando pasajeros…'
+              : pending === 0
+                ? 'Todas las paradas confirmadas'
+                : `${pending} de ${trip.passengers.length} paradas pendientes`}
+          </Text>
         </>
       }
       footer={
@@ -164,51 +184,46 @@ function DriverScreen() {
         />
       }
     >
-      <Text style={styles.summary}>
-        {trip.passengers.length === 0
-          ? 'Esperando pasajeros…'
-          : pending === 0
-            ? 'Todas las paradas confirmadas'
-            : `${pending} de ${trip.passengers.length} paradas pendientes`}
-      </Text>
       {errorBanner}
-      <FlatList
-        data={trip.passengers}
-        keyExtractor={(passenger) => passenger.userId}
-        renderItem={({ item }) => (
-          <PassengerRow
-            name={item.name}
-            address={item.address}
-            confirmed={item.confirmed}
-            loading={busy === item.userId}
-            onConfirm={() => confirmStop(item)}
-          />
-        )}
-      />
+      {trip.passengers.length === 0 && (
+        <Text style={styles.empty}>Los pasajeros aparecerán aquí en cuanto se anoten.</Text>
+      )}
+      {/* Plain map instead of FlatList: the layout already scrolls, and a route has few passengers. */}
+      {trip.passengers.map((item) => (
+        <PassengerRow
+          key={item.userId}
+          name={item.name}
+          address={item.address}
+          confirmed={item.confirmed}
+          loading={busy === item.userId}
+          onConfirm={() => confirmStop(item)}
+        />
+      ))}
       {dialog}
     </ScreenLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  greeting: { fontFamily: fonts.regular, fontSize: 20, color: colors.background },
+  headerCaption: { fontFamily: fonts.regular, fontSize: 20, color: colors.white, marginTop: 24 },
+  headerTitle: { fontFamily: fonts.regular, fontSize: 40, color: colors.background },
+  headerStatus: { fontFamily: fonts.regular, fontSize: 15, color: colors.background, opacity: 0.85, marginTop: 6 },
   caption: { fontFamily: fonts.regular, fontSize: 18, color: colors.dark },
   nextRoute: { fontFamily: fonts.regular, fontSize: 44, color: colors.dark, marginTop: 12 },
   hint: { fontFamily: fonts.regular, fontSize: 13, color: colors.disabledText, marginTop: 24 },
-  headerCaption: { fontFamily: fonts.regular, fontSize: 22, color: colors.white },
-  headerRoute: { fontFamily: fonts.regular, fontSize: 40, color: colors.background },
-  summary: { fontFamily: fonts.regular, fontSize: 14, color: colors.disabledText, marginBottom: 14 },
-  error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginVertical: 12 },
+  empty: { fontFamily: fonts.regular, fontSize: 14, color: colors.disabledText, textAlign: 'center', marginTop: 24 },
+  error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginBottom: 12 },
   finishedIcon: {
     alignSelf: 'center',
-    marginBottom: 24,
+    marginTop: 16,
     width: 140,
     height: 140,
     borderRadius: 70,
     borderWidth: 5,
-    borderColor: colors.background,
+    borderColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  finishedText: { fontFamily: fonts.regular, fontSize: 30, color: colors.dark, textAlign: 'center', marginTop: 12 },
+  finishedText: { fontFamily: fonts.regular, fontSize: 18, color: colors.dark, textAlign: 'center', marginTop: 28 },
+  finishedRoute: { fontFamily: fonts.bold, color: colors.primary },
 });

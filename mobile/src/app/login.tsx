@@ -34,8 +34,12 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScreenLayout
-        headerHeight="30%"
-        header={<Text style={styles.title}>Proyecto Carreras</Text>}
+        header={
+          <>
+            <Text style={styles.title}>Proyecto Carreras</Text>
+            <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
+          </>
+        }
         footer={
           <>
             <PrimaryButton label="Iniciar sesión" onPress={submit} disabled={!canSubmit} loading={submitting} />
@@ -76,7 +80,8 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontFamily: fonts.regular, fontSize: 34, color: colors.dark },
+  title: { fontFamily: fonts.regular, fontSize: 34, color: colors.dark, marginTop: 48 },
+  subtitle: { fontFamily: fonts.regular, fontSize: 15, color: colors.background, marginTop: 6 },
   error: { fontFamily: fonts.regular, color: colors.danger, fontSize: 14, marginTop: 4 },
   link: { fontFamily: fonts.regular, color: colors.dark, fontSize: 14, textAlign: 'center', marginTop: 16 },
   linkStrong: { fontFamily: fonts.bold, color: colors.primary },

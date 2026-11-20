@@ -1,6 +1,6 @@
 import { Link, Redirect } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { errorMessage } from '../api/client';
 import { useSession } from '../session/session-context';
 import { PrimaryButton } from '../ui/primary-button';
@@ -46,8 +46,12 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScreenLayout
-        headerHeight="20%"
-        header={<Text style={styles.title}>Crear cuenta</Text>}
+        header={
+          <>
+            <Text style={styles.title}>Crear cuenta</Text>
+            <Text style={styles.subtitle}>Te registras como pasajero</Text>
+          </>
+        }
         footer={
           <>
             <PrimaryButton label="Registrarme" onPress={submit} disabled={!canSubmit} loading={submitting} />
@@ -57,7 +61,7 @@ export default function RegisterScreen() {
           </>
         }
       >
-        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View>
           <TextField label="Nombre" value={name} onChangeText={setName} autoComplete="name" textContentType="name" />
           <TextField
             label="Correo electrónico"
@@ -96,14 +100,15 @@ export default function RegisterScreen() {
               <Text style={styles.hint}>Falta: {problems.join(', ')}.</Text>
             )
           )}
-        </ScrollView>
+        </View>
       </ScreenLayout>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { fontFamily: fonts.regular, fontSize: 30, color: colors.background },
+  title: { fontFamily: fonts.regular, fontSize: 30, color: colors.background, marginTop: 24 },
+  subtitle: { fontFamily: fonts.regular, fontSize: 15, color: colors.background, opacity: 0.85, marginTop: 6 },
   error: { fontFamily: fonts.regular, color: colors.danger, fontSize: 14, marginTop: 4 },
   hint: { fontFamily: fonts.regular, color: colors.disabledText, fontSize: 13, marginTop: 4 },
   link: { fontFamily: fonts.regular, color: colors.dark, fontSize: 14, textAlign: 'center', marginTop: 16 },

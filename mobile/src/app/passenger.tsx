@@ -46,6 +46,16 @@ function PassengerScreen() {
   const joined = trip?.joined ?? false;
   const pickedUp = trip?.confirmed ?? false;
 
+  const status = !state
+    ? 'Cargando…'
+    : !trip
+      ? 'Te avisaremos cuando el chofer inicie la ruta.'
+      : pickedUp
+        ? 'El chofer confirmó tu parada. ¡Buen viaje!'
+        : joined
+          ? 'El chofer ya te ve en su lista.'
+          : 'Si no vas a usar el transporte, no necesitas hacer nada.';
+
   return (
     <ScreenLayout
       onSignOut={signOut}
@@ -56,7 +66,35 @@ function PassengerScreen() {
           <Text style={styles.name} numberOfLines={1}>
             {session.user.name}
           </Text>
+          <Text style={styles.status}>{status}</Text>
         </>
+      }
+      footer={
+        state && (
+          <>
+            <PrimaryButton
+              label={pickedUp ? 'A bordo' : joined ? 'Confirmado' : 'Usaré el transporte'}
+              onPress={() => run('join', api.joinTrip)}
+              disabled={!trip || joined}
+              loading={busy === 'join'}
+            />
+            {joined && !pickedUp && (
+              <Pressable
+                onPress={() => run('leave', api.leaveTrip)}
+                disabled={busy !== null}
+                hitSlop={10}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.cancel, pressed && styles.cancelPressed]}
+              >
+                {busy === 'leave' ? (
+                  <ActivityIndicator color={colors.disabledText} size="small" />
+                ) : (
+                  <Text style={styles.cancelLabel}>Ya no lo usaré</Text>
+                )}
+              </Pressable>
+            )}
+          </>
+        )
       }
     >
       {!state ? (
@@ -67,38 +105,6 @@ function PassengerScreen() {
           <View style={styles.banner}>
             <RouteBanner label={ROUTE_LABELS[trip?.route ?? state.nextRoute]} highlighted={!!trip && !joined} />
           </View>
-          <View style={styles.action}>
-            <PrimaryButton
-              label={pickedUp ? 'A bordo' : joined ? 'Confirmado' : 'Usaré el transporte'}
-              onPress={() => run('join', api.joinTrip)}
-              disabled={!trip || joined}
-              loading={busy === 'join'}
-            />
-          </View>
-          {joined && !pickedUp && (
-            <Pressable
-              onPress={() => run('leave', api.leaveTrip)}
-              disabled={busy !== null}
-              hitSlop={10}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.cancel, pressed && styles.cancelPressed]}
-            >
-              {busy === 'leave' ? (
-                <ActivityIndicator color={colors.disabledText} size="small" />
-              ) : (
-                <Text style={styles.cancelLabel}>Ya no lo usaré</Text>
-              )}
-            </Pressable>
-          )}
-          <Text style={styles.hint}>
-            {!trip
-              ? 'Te avisaremos cuando el chofer inicie la ruta.'
-              : pickedUp
-                ? 'El chofer confirmó tu parada. ¡Buen viaje!'
-                : joined
-                  ? 'El chofer ya te ve en su lista.'
-                  : 'Si no vas a usar el transporte, no necesitas hacer nada.'}
-          </Text>
           {error && (
             <Text style={styles.error} accessibilityRole="alert">
               {error}
@@ -111,14 +117,14 @@ function PassengerScreen() {
 }
 
 const styles = StyleSheet.create({
-  greeting: { fontFamily: fonts.regular, fontSize: 18, color: colors.white },
+  greeting: { fontFamily: fonts.regular, fontSize: 18, color: colors.white, marginTop: 24 },
   name: { fontFamily: fonts.regular, fontSize: 38, color: colors.background, marginTop: 4 },
+  status: { fontFamily: fonts.regular, fontSize: 15, color: colors.background, opacity: 0.85, marginTop: 8 },
   caption: { fontFamily: fonts.regular, fontSize: 22, color: colors.dark },
   banner: { marginTop: 14, marginLeft: -8 },
-  action: { marginTop: 48 },
   cancel: {
     alignSelf: 'center',
-    marginTop: 14,
+    marginTop: 12,
     paddingVertical: 8,
     paddingHorizontal: 18,
     borderRadius: 999,
@@ -129,6 +135,5 @@ const styles = StyleSheet.create({
   },
   cancelPressed: { backgroundColor: colors.disabled },
   cancelLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.disabledText },
-  hint: { fontFamily: fonts.regular, fontSize: 13, color: colors.disabledText, marginTop: 16, textAlign: 'center' },
-  error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginTop: 12, textAlign: 'center' },
+  error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginTop: 20, textAlign: 'center' },
 });
