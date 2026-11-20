@@ -50,6 +50,13 @@ async function setup() {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
 const send = (socket: Socket, message: object) => socket.send(JSON.stringify(message));
 const position = (lat: number, lng: number) => ({ type: 'position', lat, lng, heading: 90 });
+const report = (app: Awaited<ReturnType<typeof buildApp>>, token: string | null, payload: object) =>
+  app.inject({
+    method: 'POST',
+    url: '/location',
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    payload,
+  });
 
 describe('driver location relay', () => {
   it('relays the driver position to passengers who joined the active trip', async () => {
@@ -168,6 +175,52 @@ describe('driver location relay', () => {
 
     expect(anaWs.messages).toEqual([]);
     for (const ws of [anaWs, betoWs, driverWs]) ws.socket.terminate();
+  });
+
+  it('relays positions the driver reports over HTTP (background tracking)', async () => {
+    const { app, login, post, connect } = await setup();
+    const driver = await login('driver@test.dev');
+    const ana = await login('ana@test.dev');
+    await post('/trips', driver);
+    await post('/trips/current/passengers', ana);
+    const anaWs = await connect(ana);
+
+    const response = await report(app, driver, { lat: 10.5, lng: -66.9, heading: null });
+    await settle();
+
+    expect(response.statusCode).toBe(204);
+    expect(anaWs.messages).toEqual([
+      { type: 'driver-position', lat: 10.5, lng: -66.9, heading: null, at: expect.any(String) },
+    ]);
+    anaWs.socket.terminate();
+  });
+
+  it('answers 409 NO_ACTIVE_TRIP over HTTP so the phone stops tracking', async () => {
+    const { app, login } = await setup();
+    const driver = await login('driver@test.dev');
+
+    const response = await report(app, driver, { lat: 10.5, lng: -66.9 });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe('NO_ACTIVE_TRIP');
+  });
+
+  it('rejects HTTP reports from passengers, without a session, or with bad coordinates', async () => {
+    const { app, login, post, connect } = await setup();
+    const driver = await login('driver@test.dev');
+    const ana = await login('ana@test.dev');
+    await post('/trips', driver);
+    await post('/trips/current/passengers', ana);
+    const anaWs = await connect(ana);
+
+    expect((await report(app, ana, { lat: 5, lng: 5 })).statusCode).toBe(403);
+    expect((await report(app, null, { lat: 5, lng: 5 })).statusCode).toBe(401);
+    expect((await report(app, 'garbage', { lat: 5, lng: 5 })).statusCode).toBe(401);
+    expect((await report(app, driver, { lat: 200, lng: 0 })).statusCode).toBe(400);
+    await settle();
+
+    expect(anaWs.messages).toEqual([]);
+    anaWs.socket.terminate();
   });
 
   it('closes the socket when authentication fails', async () => {

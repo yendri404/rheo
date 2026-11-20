@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { z } from 'zod';
+import { AppError } from '../shared/app-error.ts';
 import type { ActiveTrip } from '../trips/trip.ts';
 import type { TripService } from '../trips/trip-service.ts';
 import type { User } from '../users/user.ts';
@@ -16,12 +17,16 @@ const WS_UNAUTHORIZED = 4401;
 const MIN_INTERVAL_MS = 500;
 
 const authMessage = z.object({ type: z.literal('auth'), token: z.string() });
-const positionMessage = z.object({
-  type: z.literal('position'),
+const positionFields = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   heading: z.number().min(0).max(360).nullish(),
 });
+const positionMessage = positionFields.extend({ type: z.literal('position') });
+
+export type PositionReport = z.infer<typeof positionFields>;
+/** `relayed`/`throttled` both mean "keep sending"; `no-trip` means the driver should stop tracking. */
+export type ReportOutcome = 'relayed' | 'throttled' | 'no-trip';
 
 type DriverPosition = { tripId: string; lat: number; lng: number; heading: number | null; at: Date };
 type Client = { socket: WebSocket; user: User };
@@ -59,22 +64,27 @@ export class LocationRelay {
     this.#clients.clear();
   }
 
-  async #onPosition(raw: string): Promise<void> {
-    const parsed = positionMessage.safeParse(safeJson(raw));
-    if (!parsed.success) return;
+  /** Shared by the WebSocket and the HTTP endpoint the phone uses while the app is in the background. */
+  async report(position: PositionReport): Promise<ReportOutcome> {
     const now = new Date();
-    if (this.#last && now.getTime() - this.#last.at.getTime() < MIN_INTERVAL_MS) return;
+    if (this.#last && now.getTime() - this.#last.at.getTime() < MIN_INTERVAL_MS) return 'throttled';
 
     const trip = (await this.#tripService.state()).activeTrip;
     if (!trip) {
       this.#last = null; // Nothing to share outside a trip, and nothing kept for later.
-      return;
+      return 'no-trip';
     }
-    const { lat, lng, heading } = parsed.data;
+    const { lat, lng, heading } = position;
     this.#last = { tripId: trip.id, lat, lng, heading: heading ?? null, at: now };
     for (const client of this.#clients) {
       if (canSeeDriver(trip, client.user)) send(client, this.#last);
     }
+    return 'relayed';
+  }
+
+  async #onPosition(raw: string): Promise<void> {
+    const parsed = positionMessage.safeParse(safeJson(raw));
+    if (parsed.success) await this.report(parsed.data);
   }
 }
 
@@ -92,7 +102,11 @@ function safeJson(raw: string): unknown {
   }
 }
 
-/** `/ws/location`: same first-message auth as `/ws`. Drivers send positions; passengers receive them. */
+/**
+ * `/ws/location`: same first-message auth as `/ws`. Drivers send positions; passengers receive them.
+ * `POST /location`: the same driver report over HTTP, for the background task (a locked phone
+ * suspends WebSockets). It answers 409 NO_ACTIVE_TRIP so the phone stops tracking on its own.
+ */
 export function registerLocationRoutes(
   app: FastifyInstance,
   deps: { authenticate: (token: string) => Promise<User>; tripService: TripService },
@@ -111,6 +125,16 @@ export function registerLocationRoutes(
       }
     });
     socket.once('close', () => clearTimeout(timeout));
+  });
+
+  app.post('/location', async (request, reply) => {
+    const header = request.headers.authorization;
+    if (!header?.startsWith('Bearer ')) throw new AppError('UNAUTHENTICATED', 'Missing session.');
+    const user = await deps.authenticate(header.slice('Bearer '.length));
+    if (user.role !== 'driver') throw new AppError('FORBIDDEN', 'Only the driver shares a location.');
+    const outcome = await relay.report(positionFields.parse(request.body));
+    if (outcome === 'no-trip') throw new AppError('NO_ACTIVE_TRIP', 'No active trip.');
+    return reply.status(204).send();
   });
 
   app.addHook('onClose', async () => relay.close());
