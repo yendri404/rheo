@@ -1,12 +1,14 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { errorMessage } from '../api/client';
 import { ROUTE_LABELS, type DriverPassenger, type DriverState, type DriverTrip, type RouteName } from '../api/types';
 import { useTripState } from '../realtime/use-trip-state';
 import { useAuthenticated, useSession } from '../session/session-context';
 import { Checkmark } from '../ui/checkmark';
 import { useConfirm } from '../ui/confirm-dialog';
+import { motion } from '../ui/motion';
 import { PassengerRow } from '../ui/passenger-row';
 import { PrimaryButton } from '../ui/primary-button';
 import { ScreenLayout } from '../ui/screen-layout';
@@ -96,6 +98,7 @@ function DriverScreen() {
   if (justFinished) {
     return (
       <ScreenLayout
+        contentKey="finished"
         header={
           <>
             <Text style={styles.headerCaption}>¡Buen trabajo!</Text>
@@ -104,9 +107,9 @@ function DriverScreen() {
         }
         footer={<PrimaryButton label="Ok" onPress={() => setJustFinished(false)} />}
       >
-        <View style={styles.finishedIcon}>
+        <Animated.View entering={motion.pop} style={styles.finishedIcon}>
           <Checkmark size={64} strokeWidth={6} color={colors.primary} />
-        </View>
+        </Animated.View>
         {state && (
           <Text style={styles.finishedText}>
             Siguiente ruta: <Text style={styles.finishedRoute}>{ROUTE_LABELS[state.nextRoute]}</Text>
@@ -118,7 +121,12 @@ function DriverScreen() {
 
   if (!state) {
     return (
-      <ScreenLayout header={<Text style={styles.headerCaption}>Cargando…</Text>} onSignOut={signOut} connected={connected}>
+      <ScreenLayout
+        contentKey="loading"
+        header={<Text style={styles.headerCaption}>Cargando…</Text>}
+        onSignOut={signOut}
+        connected={connected}
+      >
         <ActivityIndicator color={colors.primary} />
       </ScreenLayout>
     );
@@ -129,6 +137,7 @@ function DriverScreen() {
   if (!trip) {
     return (
       <ScreenLayout
+        contentKey="home"
         onSignOut={askSignOut}
         connected={connected}
         header={
@@ -157,22 +166,26 @@ function DriverScreen() {
   }
 
   const pending = trip.passengers.filter((passenger) => !passenger.confirmed).length;
+  const status =
+    trip.passengers.length === 0
+      ? 'Esperando pasajeros…'
+      : pending === 0
+        ? 'Todas las paradas confirmadas'
+        : `${pending} de ${trip.passengers.length} paradas pendientes`;
 
   return (
     <ScreenLayout
+      contentKey={trip.id}
       onSignOut={askSignOut}
       connected={connected}
       header={
         <>
           <Text style={styles.headerCaption}>Ruta:</Text>
           <Text style={styles.headerTitle}>{ROUTE_LABELS[trip.route]}</Text>
-          <Text style={styles.headerStatus}>
-            {trip.passengers.length === 0
-              ? 'Esperando pasajeros…'
-              : pending === 0
-                ? 'Todas las paradas confirmadas'
-                : `${pending} de ${trip.passengers.length} paradas pendientes`}
-          </Text>
+          {/* Re-keyed so each count change fades in instead of snapping. */}
+          <Animated.Text key={status} entering={motion.textEnter} style={styles.headerStatus}>
+            {status}
+          </Animated.Text>
         </>
       }
       footer={
@@ -186,18 +199,22 @@ function DriverScreen() {
     >
       {errorBanner}
       {trip.passengers.length === 0 && (
-        <Text style={styles.empty}>Los pasajeros aparecerán aquí en cuanto se anoten.</Text>
+        <Animated.Text entering={motion.textEnter} style={styles.empty}>
+          Los pasajeros aparecerán aquí en cuanto se anoten.
+        </Animated.Text>
       )}
-      {/* Plain map instead of FlatList: the layout already scrolls, and a route has few passengers. */}
+      {/* Plain map instead of FlatList: the layout already scrolls, and a route has few passengers.
+          New passengers spring in, cancelled ones slide out, and the rest glide into place. */}
       {trip.passengers.map((item) => (
-        <PassengerRow
-          key={item.userId}
-          name={item.name}
-          address={item.address}
-          confirmed={item.confirmed}
-          loading={busy === item.userId}
-          onConfirm={() => confirmStop(item)}
-        />
+        <Animated.View key={item.userId} entering={motion.rowEnter} exiting={motion.rowExit} layout={motion.rowLayout}>
+          <PassengerRow
+            name={item.name}
+            address={item.address}
+            confirmed={item.confirmed}
+            loading={busy === item.userId}
+            onConfirm={() => confirmStop(item)}
+          />
+        </Animated.View>
       ))}
       {dialog}
     </ScreenLayout>
@@ -207,7 +224,8 @@ function DriverScreen() {
 const styles = StyleSheet.create({
   headerCaption: { fontFamily: fonts.regular, fontSize: 20, color: colors.white, marginTop: 24 },
   headerTitle: { fontFamily: fonts.regular, fontSize: 40, color: colors.background },
-  headerStatus: { fontFamily: fonts.regular, fontSize: 15, color: colors.background, opacity: 0.85, marginTop: 6 },
+  // Translucency lives in the color: the entering animation owns opacity.
+  headerStatus: { fontFamily: fonts.regular, fontSize: 15, color: 'rgba(234, 240, 241, 0.85)', marginTop: 6 },
   caption: { fontFamily: fonts.regular, fontSize: 18, color: colors.dark },
   nextRoute: { fontFamily: fonts.regular, fontSize: 44, color: colors.dark, marginTop: 12 },
   hint: { fontFamily: fonts.regular, fontSize: 13, color: colors.disabledText, marginTop: 24 },

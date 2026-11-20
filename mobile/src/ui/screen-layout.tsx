@@ -1,6 +1,14 @@
-import { useRef, useState, type ReactNode } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { motion } from './motion';
 import { colors, fonts, radius } from './theme';
 
 type Props = {
@@ -11,6 +19,8 @@ type Props = {
   footer?: ReactNode;
   onSignOut?: () => void;
   connected?: boolean;
+  /** Changing it replays the entrance animation (header fades in, sheet content springs up). */
+  contentKey?: string;
 };
 
 const TOP_BAR_HEIGHT = 40;
@@ -18,28 +28,41 @@ const TOP_BAR_HEIGHT = 40;
 /**
  * Green app background with short messages on top, and a light sheet that scrolls up over them.
  * As the sheet rises, the header recedes (fades, shrinks and drifts up): a simple depth effect.
+ * Scroll tracking runs on the UI thread (Reanimated), so it stays smooth while JS is busy.
  */
-export function ScreenLayout({ header, children, footer, onSignOut, connected = true }: Props) {
+export function ScreenLayout({ header, children, footer, onSignOut, connected = true, contentKey = 'default' }: Props) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const scrollY = useSharedValue(0);
+  const travel = useSharedValue(1);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [footerHeight, setFooterHeight] = useState(0);
 
   const topBarHeight = insets.top + TOP_BAR_HEIGHT;
-  const travel = Math.max(headerHeight, 1);
-  const receding = {
-    opacity: scrollY.interpolate({ inputRange: [0, travel * 0.8], outputRange: [1, 0], extrapolate: 'clamp' }),
-    transform: [
-      { translateY: scrollY.interpolate({ inputRange: [0, travel], outputRange: [0, -travel * 0.3], extrapolate: 'clamp' }) },
-      { scale: scrollY.interpolate({ inputRange: [0, travel], outputRange: [1, 0.88], extrapolate: 'clamp' }) },
-    ],
-  };
+
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y;
+  });
+
+  const receding = useAnimatedStyle(() => {
+    const distance = travel.value;
+    return {
+      opacity: interpolate(scrollY.value, [0, distance * 0.8], [1, 0], Extrapolation.CLAMP),
+      transform: [
+        { translateY: interpolate(scrollY.value, [0, distance], [0, -distance * 0.3], Extrapolation.CLAMP) },
+        { scale: interpolate(scrollY.value, [0, distance], [1, 0.88], Extrapolation.CLAMP) },
+      ],
+    };
+  });
 
   return (
     <View style={styles.root}>
       <View style={[styles.topBar, { paddingTop: insets.top, height: topBarHeight }]}>
-        {!connected && <Text style={styles.offline}>Reconectando…</Text>}
+        {!connected && (
+          <Animated.Text entering={motion.textEnter} style={styles.offline}>
+            Reconectando…
+          </Animated.Text>
+        )}
         {onSignOut && (
           <Pressable onPress={onSignOut} hitSlop={12} accessibilityRole="button">
             <Text style={styles.signOut}>Cerrar sesión</Text>
@@ -50,17 +73,21 @@ export function ScreenLayout({ header, children, footer, onSignOut, connected = 
       <Animated.View
         pointerEvents="none"
         style={[styles.header, { top: topBarHeight }, receding]}
-        onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
+        onLayout={(event) => {
+          const measured = event.nativeEvent.layout.height;
+          setHeaderHeight(measured);
+          travel.value = Math.max(measured, 1);
+        }}
       >
-        {header}
+        <Animated.View key={contentKey} entering={motion.textEnter}>
+          {header}
+        </Animated.View>
       </Animated.View>
 
       <Animated.ScrollView
         style={styles.scroll}
         contentContainerStyle={{ paddingTop: headerHeight }}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
-          useNativeDriver: Platform.OS !== 'web',
-        })}
+        onScroll={onScroll}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -68,7 +95,9 @@ export function ScreenLayout({ header, children, footer, onSignOut, connected = 
         {/* Tall enough to always slide over the header, even with little content. */}
         <View style={[styles.sheet, { minHeight: height - topBarHeight, paddingBottom: footerHeight + 24 }]}>
           <View style={styles.handle} />
-          {children}
+          <Animated.View key={contentKey} entering={motion.sheetEnter}>
+            {children}
+          </Animated.View>
         </View>
       </Animated.ScrollView>
 

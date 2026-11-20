@@ -1,10 +1,12 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { errorMessage } from '../api/client';
 import { ROUTE_LABELS, type PassengerState } from '../api/types';
 import { useTripState } from '../realtime/use-trip-state';
 import { useAuthenticated, useSession } from '../session/session-context';
+import { motion } from '../ui/motion';
 import { PrimaryButton } from '../ui/primary-button';
 import { RouteBanner } from '../ui/route-banner';
 import { ScreenLayout } from '../ui/screen-layout';
@@ -58,6 +60,8 @@ function PassengerScreen() {
 
   return (
     <ScreenLayout
+      // A started or finished trip replays the entrance animation while the app is open.
+      contentKey={!state ? 'loading' : (trip?.id ?? 'idle')}
       onSignOut={signOut}
       connected={connected}
       header={
@@ -66,7 +70,9 @@ function PassengerScreen() {
           <Text style={styles.name} numberOfLines={1}>
             {session.user.name}
           </Text>
-          <Text style={styles.status}>{status}</Text>
+          <Animated.Text key={status} entering={motion.textEnter} style={styles.status}>
+            {status}
+          </Animated.Text>
         </>
       }
       footer={
@@ -79,19 +85,21 @@ function PassengerScreen() {
               loading={busy === 'join'}
             />
             {joined && !pickedUp && (
-              <Pressable
-                onPress={() => run('leave', api.leaveTrip)}
-                disabled={busy !== null}
-                hitSlop={10}
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.cancel, pressed && styles.cancelPressed]}
-              >
-                {busy === 'leave' ? (
-                  <ActivityIndicator color={colors.disabledText} size="small" />
-                ) : (
-                  <Text style={styles.cancelLabel}>Ya no lo usaré</Text>
-                )}
-              </Pressable>
+              <Animated.View entering={motion.textEnter}>
+                <Pressable
+                  onPress={() => run('leave', api.leaveTrip)}
+                  disabled={busy !== null}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [styles.cancel, pressed && styles.cancelPressed]}
+                >
+                  {busy === 'leave' ? (
+                    <ActivityIndicator color={colors.disabledText} size="small" />
+                  ) : (
+                    <Text style={styles.cancelLabel}>Ya no lo usaré</Text>
+                  )}
+                </Pressable>
+              </Animated.View>
             )}
           </>
         )
@@ -119,7 +127,8 @@ function PassengerScreen() {
 const styles = StyleSheet.create({
   greeting: { fontFamily: fonts.regular, fontSize: 18, color: colors.white, marginTop: 24 },
   name: { fontFamily: fonts.regular, fontSize: 38, color: colors.background, marginTop: 4 },
-  status: { fontFamily: fonts.regular, fontSize: 15, color: colors.background, opacity: 0.85, marginTop: 8 },
+  // Translucency lives in the color: the entering animation owns opacity.
+  status: { fontFamily: fonts.regular, fontSize: 15, color: 'rgba(234, 240, 241, 0.85)', marginTop: 8 },
   caption: { fontFamily: fonts.regular, fontSize: 22, color: colors.dark },
   banner: { marginTop: 14, marginLeft: -8 },
   cancel: {
