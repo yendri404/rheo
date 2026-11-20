@@ -45,13 +45,6 @@ const WS_UNAUTHORIZED = 4401;
 
 const emailField = z.string().trim().toLowerCase().pipe(z.email().max(254));
 const loginBody = z.object({ email: emailField, password: z.string().min(1).max(200) });
-// Unknown keys such as "role" are stripped: sign-up can never pick the driver role.
-const registerBody = z.object({
-  name: z.string().trim().min(1).max(100),
-  email: emailField,
-  password: z.string().min(8).max(200),
-  address: z.string().trim().min(1).max(300),
-});
 const pushTokenBody = z.object({ token: z.string().min(1).max(300).nullable() });
 const passengerParams = z.object({ userId: z.uuid() });
 const wsAuthMessage = z.object({ type: z.literal('auth'), token: z.string() });
@@ -106,11 +99,8 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     return { token: app.jwt.sign({ sub: user.id }), user };
   });
 
-  app.post('/auth/register', async (request, reply) => {
-    const user = await authService.register(registerBody.parse(request.body));
-    return reply.status(201).send({ token: app.jwt.sign({ sub: user.id }), user });
-  });
-
+  // No self sign-up: the app is private, users are created by an administrator
+  // (for now with scripts/create-user.ts; later from a web panel).
   app.get('/me', async (request) => currentUser(request));
 
   app.put('/me/push-token', async (request, reply) => {

@@ -65,58 +65,19 @@ describe('HTTP API', () => {
     expect(wrongPassword.json().error.code).toBe('INVALID_CREDENTIALS');
   });
 
-  it('registers a passenger, logs them in, and lets them log in again later', async () => {
-    const { call } = await setupApp();
+  it('has no self sign-up: registering is not possible and creates no user', async () => {
+    const { call, users } = await setupApp();
     const response = await call('POST', '/auth/register', undefined, {
-      name: ' Carla ',
-      email: ' Carla@Test.dev ',
+      name: 'Outsider',
+      email: 'outsider@test.dev',
       password: 'secret123',
       address: 'Calle 9 #10',
-    });
-
-    expect(response.statusCode).toBe(201);
-    const body = response.json();
-    expect(body.token).toEqual(expect.any(String));
-    expect(body.user).toEqual({ id: expect.any(String), email: 'carla@test.dev', name: 'Carla', address: 'Calle 9 #10', role: 'passenger' });
-    expect((await call('GET', '/me', body.token)).json().email).toBe('carla@test.dev');
-    expect((await call('POST', '/auth/login', undefined, { email: 'carla@test.dev', password: 'secret123' })).statusCode).toBe(200);
-  });
-
-  it('never lets registration choose the driver role', async () => {
-    const { call } = await setupApp();
-    const response = await call('POST', '/auth/register', undefined, {
-      name: 'Mallory',
-      email: 'mallory@test.dev',
-      password: 'secret123',
-      address: 'Calle 1',
       role: 'driver',
     });
-    expect(response.statusCode).toBe(201);
-    expect(response.json().user.role).toBe('passenger');
-  });
 
-  it('rejects registering an email that already exists, case-insensitively', async () => {
-    const { call } = await setupApp();
-    const response = await call('POST', '/auth/register', undefined, {
-      name: 'Ana 2',
-      email: 'ANA@test.dev',
-      password: 'secret123',
-      address: 'Calle 1',
-    });
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe('EMAIL_TAKEN');
-  });
-
-  it.each([
-    ['a short password', { name: 'X', email: 'x@test.dev', password: 'short', address: 'Calle 1' }],
-    ['a missing address', { name: 'X', email: 'x@test.dev', password: 'secret123', address: '   ' }],
-    ['a missing name', { name: '', email: 'x@test.dev', password: 'secret123', address: 'Calle 1' }],
-    ['an invalid email', { name: 'X', email: 'nope', password: 'secret123', address: 'Calle 1' }],
-  ])('rejects registration with %s', async (_case, payload) => {
-    const { call } = await setupApp();
-    const response = await call('POST', '/auth/register', undefined, payload);
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe('VALIDATION_FAILED');
+    expect(response.statusCode).toBe(404);
+    expect(await users.findByEmail('outsider@test.dev')).toBeNull();
+    expect((await call('POST', '/auth/login', undefined, { email: 'outsider@test.dev', password: 'secret123' })).statusCode).toBe(401);
   });
 
   it('rejects malformed bodies with 400', async () => {
