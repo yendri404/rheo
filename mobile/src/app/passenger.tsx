@@ -5,7 +5,10 @@ import Animated from 'react-native-reanimated';
 import { errorMessage } from '../api/client';
 import { ROUTE_LABELS, type PassengerState } from '../api/types';
 import { DriverMap } from '../map/driver-map';
+import { useDriverProximity } from '../map/use-driver-proximity';
+import { prepareLocalNotifications } from '../notifications/local';
 import { useDriverLocation } from '../realtime/use-driver-location';
+import { useOwnLocation } from '../realtime/use-own-location';
 import { useTripState } from '../realtime/use-trip-state';
 import { useAuthenticated, useSession } from '../session/session-context';
 import { motion } from '../ui/motion';
@@ -50,6 +53,14 @@ function PassengerScreen() {
   const joined = trip?.joined ?? false;
   const pickedUp = trip?.confirmed ?? false;
   const driverLocation = useDriverLocation(session.token, joined && trip !== null);
+  // Proximity only matters while waiting to be picked up. The passenger's position stays on the device.
+  const waitingForPickup = joined && !pickedUp && trip !== null;
+  const ownLocation = useOwnLocation(waitingForPickup);
+  const proximity = useDriverProximity(
+    waitingForPickup ? driverLocation.position : null,
+    ownLocation.position,
+    trip?.id ?? null,
+  );
 
   const status = !state
     ? 'Cargando…'
@@ -57,9 +68,11 @@ function PassengerScreen() {
       ? 'Te avisaremos cuando el chofer inicie la ruta.'
       : pickedUp
         ? 'El chofer confirmó tu parada. ¡Buen viaje!'
-        : joined
-          ? 'El chofer ya te ve en su lista.'
-          : 'Si no vas a usar el transporte, no necesitas hacer nada.';
+        : joined && proximity.near
+          ? '¡El chofer está a menos de 200 m!'
+          : joined
+            ? 'El chofer ya te ve en su lista.'
+            : 'Si no vas a usar el transporte, no necesitas hacer nada.';
 
   return (
     <ScreenLayout
@@ -83,7 +96,11 @@ function PassengerScreen() {
           <>
             <PrimaryButton
               label={pickedUp ? 'A bordo' : joined ? 'Confirmado' : 'Usaré el transporte'}
-              onPress={() => run('join', api.joinTrip)}
+              onPress={() => {
+                // Browsers only allow asking for notification permission from a tap like this one.
+                prepareLocalNotifications().catch(() => {});
+                run('join', api.joinTrip);
+              }}
               disabled={!trip || joined}
               loading={busy === 'join'}
             />
@@ -123,7 +140,15 @@ function PassengerScreen() {
           </View>
           {joined && trip && (
             <Animated.View entering={motion.sheetEnter} style={styles.map}>
-              <DriverMap position={driverLocation.position} stale={driverLocation.stale} />
+              <DriverMap
+                position={driverLocation.position}
+                stale={driverLocation.stale}
+                near={proximity.near}
+                self={ownLocation.position}
+              />
+              {waitingForPickup && ownLocation.denied && (
+                <Text style={styles.locationHint}>Activa tu ubicación para saber cuándo está cerca el chofer.</Text>
+              )}
             </Animated.View>
           )}
           {error && (
@@ -145,6 +170,7 @@ const styles = StyleSheet.create({
   caption: { fontFamily: fonts.regular, fontSize: 22, color: colors.dark },
   banner: { marginTop: 14, marginLeft: -8 },
   map: { marginTop: 20 },
+  locationHint: { fontFamily: fonts.regular, fontSize: 13, color: colors.disabledText, marginTop: 10, textAlign: 'center' },
   cancel: {
     alignSelf: 'center',
     marginTop: 12,

@@ -5,13 +5,17 @@
 //   npm run simulate:driver -- --start-trip
 //   npm run simulate:driver -- --lat 10.5061 --lng -66.9146 --radius 600 --lap 90 --interval 2000
 //
+// To test the "driver is near" alert in the browser, set the passenger's location (Chrome DevTools >
+// Sensors > Location) to a point on the loop, e.g. 10.5061, -66.910032 (500 m east of the default center).
+//
 // Options:
 //   --api         API base URL                     (default http://localhost:3000)
 //   --email       driver email                     (default chofer@carreras.dev)
 //   --password    driver password                  (default carreras123)
 //   --lat --lng   center of the loop               (default 10.5061, -66.9146)
 //   --radius      loop radius in meters            (default 500)
-//   --lap         seconds per lap                  (default 120)
+//   --lap         seconds per lap                  (default 280: ~40 km/h on a 500 m radius, a realistic city speed;
+//                 use e.g. --lap 60 to see laps faster)
 //   --interval    ms between positions             (default 2000, like a real phone)
 //   --start-trip  start a trip first if none is active
 import { parseArgs } from 'node:util';
@@ -24,7 +28,7 @@ const { values } = parseArgs({
     lat: { type: 'string', default: '10.5061' },
     lng: { type: 'string', default: '-66.9146' },
     radius: { type: 'string', default: '500' },
-    lap: { type: 'string', default: '120' },
+    lap: { type: 'string', default: '280' },
     interval: { type: 'string', default: '2000' },
     'start-trip': { type: 'boolean', default: false },
   },
@@ -85,7 +89,8 @@ function connect(): void {
 
   socket.addEventListener('open', () => {
     socket.send(JSON.stringify({ type: 'auth', token }));
-    console.log(`Driving laps of ${radius}m around ${center.lat}, ${center.lng} (${lapMs / 1000}s per lap). Ctrl+C to stop.`);
+    const kmh = Math.round(((2 * Math.PI * radius) / (lapMs / 1000)) * 3.6);
+    console.log(`Driving laps of ${radius}m around ${center.lat}, ${center.lng} (${lapMs / 1000}s per lap, ~${kmh} km/h). Ctrl+C to stop.`);
     timer = setInterval(() => {
       const fraction = ((Date.now() - startedAt) % lapMs) / lapMs;
       const position = pointAt(fraction);

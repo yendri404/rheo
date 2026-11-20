@@ -3,16 +3,27 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { DriverPosition } from '../realtime/use-driver-location';
-import { colors, fonts, radius } from '../ui/theme';
+import { colors, fonts } from '../ui/theme';
+import { MapFrame } from './map-frame';
+import type { LatLng } from './proximity';
 
-export type DriverMapProps = { position: DriverPosition | null; stale: boolean };
+export type DriverMapProps = {
+  position: DriverPosition | null;
+  stale: boolean;
+  /** The driver is within ~200 m of the passenger: the border turns yellow. */
+  near: boolean;
+  /** The passenger's own position, shown as a small dot. Never leaves the device. */
+  self: LatLng | null;
+};
 
 /** Free vector tiles, no API key (https://openfreemap.org). */
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 const ZOOM = 15;
+const MAP_HEIGHT = 320;
 
 // Metro does not emit MapLibre's worker, so it is served from public/ (see scripts/sync-maplibre-worker.mjs).
 if (typeof window !== 'undefined') setWorkerUrl(new URL('/maplibre-gl-worker.mjs', window.location.origin).href);
+
 /** Glide time between two GPS fixes; close to the driver's send interval so the pin never stops. */
 const GLIDE_MS = 1_800;
 
@@ -34,13 +45,29 @@ function createPin(): HTMLElement {
   return el;
 }
 
+/** The passenger's own position: a small dark dot with a white ring. */
+function createSelfDot(): HTMLElement {
+  const el = document.createElement('div');
+  el.setAttribute('aria-label', 'Tu ubicación');
+  Object.assign(el.style, {
+    width: '16px',
+    height: '16px',
+    borderRadius: '50%',
+    background: colors.dark,
+    border: `3px solid ${colors.white}`,
+    boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+  });
+  return el;
+}
+
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-export function DriverMap({ position, stale }: DriverMapProps) {
+export function DriverMap({ position, stale, near, self }: DriverMapProps) {
   const containerRef = useRef<ComponentRef<typeof View>>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);
+  const selfRef = useRef<Marker | null>(null);
   const shownRef = useRef<{ lng: number; lat: number } | null>(null);
   const frameRef = useRef<number | null>(null);
   const followRef = useRef(true);
@@ -68,6 +95,7 @@ export function DriverMap({ position, stale }: DriverMapProps) {
       map.remove();
       mapRef.current = null;
       markerRef.current = null;
+      selfRef.current = null;
       shownRef.current = null;
     };
   }, []);
@@ -105,6 +133,19 @@ export function DriverMap({ position, stale }: DriverMapProps) {
     frameRef.current = requestAnimationFrame(step);
   }, [position]);
 
+  // The passenger's own dot.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!self) {
+      selfRef.current?.remove();
+      selfRef.current = null;
+      return;
+    }
+    if (!selfRef.current) selfRef.current = new Marker({ element: createSelfDot() }).setLngLat(self).addTo(map);
+    else selfRef.current.setLngLat(self);
+  }, [self]);
+
   // Dim the pin when the location is outdated.
   useEffect(() => {
     const el = markerRef.current?.getElement();
@@ -118,7 +159,7 @@ export function DriverMap({ position, stale }: DriverMapProps) {
   }
 
   return (
-    <View style={styles.frame}>
+    <MapFrame near={near} height={MAP_HEIGHT}>
       <View ref={containerRef} style={styles.fill} nativeID="driver-map" />
       {!position && (
         <View style={styles.overlay} pointerEvents="none">
@@ -135,12 +176,11 @@ export function DriverMap({ position, stale }: DriverMapProps) {
           <Text style={styles.recenterText}>Centrar en el chofer</Text>
         </Pressable>
       )}
-    </View>
+    </MapFrame>
   );
 }
 
 const styles = StyleSheet.create({
-  frame: { height: 320, borderRadius: radius.sheet, overflow: 'hidden', backgroundColor: colors.disabled },
   // flex, not absolute fill: MapLibre's CSS forces `position: relative` on its container, which would
   // cancel absolute positioning and collapse the map to 0px high.
   fill: { flex: 1 },
