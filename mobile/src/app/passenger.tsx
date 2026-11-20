@@ -4,6 +4,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import Animated from 'react-native-reanimated';
 import { errorMessage } from '../api/client';
 import { ROUTE_LABELS, type PassengerState } from '../api/types';
+import { DriverMap } from '../map/driver-map';
+import { useDriverLocation } from '../realtime/use-driver-location';
 import { useTripState } from '../realtime/use-trip-state';
 import { useAuthenticated, useSession } from '../session/session-context';
 import { motion } from '../ui/motion';
@@ -47,6 +49,7 @@ function PassengerScreen() {
   const trip = state?.activeTrip ?? null;
   const joined = trip?.joined ?? false;
   const pickedUp = trip?.confirmed ?? false;
+  const driverLocation = useDriverLocation(session.token, joined && trip !== null);
 
   const status = !state
     ? 'Cargando…'
@@ -118,6 +121,11 @@ function PassengerScreen() {
               size={joined ? 'compact' : 'large'}
             />
           </View>
+          {joined && trip && (
+            <Animated.View entering={motion.sheetEnter} style={styles.map}>
+              <DriverMap position={driverLocation.position} stale={driverLocation.stale} />
+            </Animated.View>
+          )}
           {error && (
             <Text style={styles.error} accessibilityRole="alert">
               {error}
@@ -136,6 +144,7 @@ const styles = StyleSheet.create({
   status: { fontFamily: fonts.regular, fontSize: 15, color: 'rgba(234, 240, 241, 0.85)', marginTop: 8 },
   caption: { fontFamily: fonts.regular, fontSize: 22, color: colors.dark },
   banner: { marginTop: 14, marginLeft: -8 },
+  map: { marginTop: 20 },
   cancel: {
     alignSelf: 'center',
     marginTop: 12,

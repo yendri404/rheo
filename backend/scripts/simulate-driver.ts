@@ -41,7 +41,11 @@ async function request(path: string, init: RequestInit & { token?: string } = {}
   const { token, ...rest } = init;
   const response = await fetch(`${api}${path}`, {
     ...rest,
-    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    // Only declare JSON when there is a body: Fastify rejects an empty body with content-type JSON.
+    headers: {
+      ...(rest.body !== undefined ? { 'content-type': 'application/json' } : {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
   });
   const body = await response.json().catch(() => ({}));
   return { status: response.status, body };
