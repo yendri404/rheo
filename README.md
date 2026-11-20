@@ -88,6 +88,22 @@ To test both roles at once, use a second browser window in incognito mode. It ge
 
 Expo Go does not support remote push on Android, so use a development build: `npx expo run:android`, or `eas build --profile development`. Without push, everything else still works: the app updates in realtime while it is open.
 
+## Live driver map (testing without driving)
+
+Passengers who joined the active trip see the driver as a pin on a map. The driver's position is relayed over `WS /ws/location` and is never stored: it lives only in memory, and only while a trip is active. The map currently runs on **web** (MapLibre + free OpenFreeMap tiles, no API key). On phones, a placeholder is shown until the native map (which needs a development build) is added.
+
+To test it, let a simulated driver drive laps around a point while you watch as a passenger in the browser:
+
+```bash
+cd backend
+npm run simulate:driver -- --start-trip                      # laps around the default point
+npm run simulate:driver -- --lat 10.5 --lng -66.9 --radius 600 --lap 90
+```
+
+Then log in as a passenger at http://localhost:8081, tap "Usaré el transporte", and watch the pin move. Drag the map to stop following the driver, and tap "Centrar en el chofer" to follow again.
+
+The web map loads MapLibre's worker from `mobile/public/maplibre-gl-worker.mjs`. That file is copied there by `npm install` (postinstall) and is not committed.
+
 ## API
 
 All routes except `/health`, `/auth/register` and `/auth/login` need `Authorization: Bearer <token>`. Every trip endpoint returns the role-specific state view.
@@ -104,6 +120,7 @@ All routes except `/health`, `/auth/register` and `/auth/login` need `Authorizat
 | DELETE | `/trips/current/passengers` | passenger: cancels their seat (idempotent). `409 STOP_ALREADY_CONFIRMED` once picked up |
 | POST | `/trips/current/passengers/:userId/confirm` | driver |
 | POST | `/trips/current/finish` | driver: only when every stop is confirmed |
+| WS | `/ws/location` | auth first like `/ws`; the driver sends `{ type: "position", lat, lng, heading? }`, joined passengers receive `{ type: "driver-position", ... }` |
 | WS | `/ws` | send `{ "type": "auth", "token": "..." }` first. You then receive `{ type: "state", data }` on every change |
 
 Passengers never receive other passengers' names or addresses.
