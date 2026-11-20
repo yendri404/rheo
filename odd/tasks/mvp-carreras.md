@@ -24,6 +24,7 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 - **S16** "el bloque \"background\" verde sera el fondo total de la app, y en el esapacio restante solo habran mensajes cortos, mientras que el recuardo de mas abajo sera escroleable para que tome el resto de espacio en pantalla dando ese efecto 3d muy sencillo".
 - **S18** "el foreground subiera y bajara en funcion de que tanta informacion hay, ya que pensaba en un futuro poner dibujitos en ese espacio, soluciona eso en la vista de empezar carrera y la de finalizar carrera con la palomita en el espacio verde con contraste blanco. osea que seas mas fiel al diseño que te indoque".
 - **S19** "modifica el boton de cerrar secion para que tenga un iconito y se vea como en la iamgen de referencia, e implementa que la tarjeta una vez llega a su maximo permita escrollear en caso de que hayan muchas personas en el transporte".
+- **S20** "puedes hacer que el \"ticket\" se agrande hacia arriba y abajo junto con el texto para enfatizarlo aun mas, pero que al seleccionar usar la ruta se achique para dejar espacio al futuro mapa que pondremos".
 - **S17** "agrega animaciones en cambios como por ejemplo al empezar una ruta y estar con la app abierta".
 - Assumption A2: one app for both roles; the screen set depends on the logged-in user's role.
 - Assumption A3: finishing with zero passengers is allowed ("all confirmed" is vacuously true).
@@ -40,6 +41,7 @@ Branch: `feat/mvp-carreras` · Delivery: ask-on-risk · Test runner: vitest (bac
 | T6 | S11,S12 | inline | done | web e2e in headless Chrome, 7/7 steps, no page errors |
 | T7 | S13 | inline | done | 113b428: RED observed (7 tests); ea55afb: CORS fix found by e2e (RED 2 tests); 70 tests green |
 | T8 | S13-S15 | inline | done | 15e8228: isolated web e2e 8/8 steps, no page errors |
+| T13 | S20 | inline | done | RouteBanner size large (124px, 56px text) until joined, compact (56px, 32px) after; springs ~450ms both ways; no truncation at 360/390px; regression 8/8 |
 | T12 | S19 | inline | done | 46c5d62: dark sign-out pill with Ionicons log-out-outline; with 15 passengers the sheet cap sticks at the top bar (40px) and the list scrolls under it, so the last passenger can be confirmed; proportions unchanged (53/65/25%); regression 8/8 |
 | T11 | S18 | inline | done | 3e568a2: green area 53% / 65% (mockup ~51% / ~65%); sheet rises 414->194px with no jump or overshoot; regression 8/8 |
 | T10 | S17 | inline | done | ae4012f: browser-measured: sheet springs in on trip start, banner pulses then yellow->green in ~300ms, rows fade in, confirmed row greys gradually; regression 8/8 |
