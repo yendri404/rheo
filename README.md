@@ -95,6 +95,10 @@ Expo Go does not support remote push on Android, so use a development build: `np
 
 Passengers who joined the active trip see the driver as a pin on a map. The driver's position is relayed over `WS /ws/location` and is never stored: it lives only in memory, and only while a trip is active. The map currently runs on **web** (MapLibre + free OpenFreeMap tiles, no API key). On phones, a placeholder is shown until the native map (which needs a development build) is added.
 
+The driver's phone shares its real GPS **only while a trip is open**, and keeps sharing with the phone locked or the app in the background (Android shows a persistent "Ruta en curso" notification; iOS shows the blue location pill). It reports over `POST /location`, because the OS suspends WebSockets in the background, at most every 5 s and only after moving 20 m, so a parked driver sends nothing. Tracking stops when the driver finishes the trip, signs out, or the server answers `409 NO_ACTIVE_TRIP` (this covers an app killed mid-trip). If the driver refuses "Always" location, it is shared only while the app is open, and the driver screen says so. On web it is foreground only.
+
+Background location needs a **development build** (`npx expo run:android` / `run:ios` or EAS); Expo Go cannot run it. On Android, choose "Allow all the time" when asked.
+
 To test it, let a simulated driver drive laps around a point while you watch as a passenger in the browser:
 
 ```bash
@@ -142,6 +146,7 @@ All routes except `/health` and `/auth/login` need `Authorization: Bearer <token
 | POST | `/trips/current/passengers/:userId/confirm` | driver |
 | POST | `/trips/current/finish` | driver: only when every stop is confirmed |
 | WS | `/ws/location` | auth first like `/ws`; the driver sends `{ type: "position", lat, lng, heading? }`, joined passengers receive `{ type: "driver-position", ... }` |
+| POST | `/location` | driver: `{ lat, lng, heading? }` relayed like `/ws/location` (used by background tracking); `204`, or `409 NO_ACTIVE_TRIP` when no trip is open |
 | POST | `/admin/login` `{ password }` | admin: master password, returns an 8 h admin token (`429` after 5 failures) |
 | GET / POST | `/admin/users` | admin: list / create (`{ name, email, address, role, password }`) |
 | PATCH / DELETE | `/admin/users/:id` | admin: edit any field (incl. `role`, `password`) / delete. `409 USER_IN_ACTIVE_TRIP` while in the running trip |
