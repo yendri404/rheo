@@ -37,8 +37,9 @@ docker compose up -d --build
 | `JWT_SECRET` | yes | 32+ characters |
 | `POSTGRES_PASSWORD` | recommended | defaults to `carreras` |
 | `EXPO_ACCESS_TOKEN` | no | only if "enhanced push security" is enabled in Expo |
+| `ADMIN_PASSWORD` | no | master password for the admin panel (12+ characters); empty disables it |
 
-This is a **private app: there is no self sign-up**. Only an administrator creates accounts, for now with these scripts (a web admin panel is planned):
+This is a **private app: there is no self sign-up**. Only an administrator creates accounts, from the [admin panel](#admin-panel) or with these scripts:
 
 ```bash
 # Create a passenger (or --role driver)
@@ -114,6 +115,17 @@ To test it in the browser:
 
 The web map loads MapLibre's worker from `mobile/public/maplibre-gl-worker.mjs`. That file is copied there by `npm install` (postinstall) and is not committed.
 
+## Admin panel
+
+Open **http://localhost:3000/admin** to list, create, edit and delete passengers and drivers. You can also change roles and reset passwords. The panel is served by the API itself, with no build step.
+
+- **Access:** a single master password, `ADMIN_PASSWORD` (12+ characters), set in `.env` next to `docker-compose.yml`. If it is unset or empty, the panel and its API do not exist (404).
+- **Brute force:** 5 wrong attempts from one address lock that address out for 15 minutes.
+- **Sessions:** admin sessions last 8 hours, are stored in the tab's `sessionStorage`, and are rejected by the app. App sessions are rejected by the panel.
+- **The running trip is protected:** nobody in it can be deleted or change role, and drivers cannot be deleted or demoted while a trip is running.
+- **New users:** "Generar" creates a strong password, which is shown once (with a copy button) so you can hand it over.
+- **Hardening:** the page sends a strict Content-Security-Policy and only ever renders user data as text.
+
 ## API
 
 All routes except `/health` and `/auth/login` need `Authorization: Bearer <token>`. Every trip endpoint returns the role-specific state view.
@@ -130,6 +142,9 @@ All routes except `/health` and `/auth/login` need `Authorization: Bearer <token
 | POST | `/trips/current/passengers/:userId/confirm` | driver |
 | POST | `/trips/current/finish` | driver: only when every stop is confirmed |
 | WS | `/ws/location` | auth first like `/ws`; the driver sends `{ type: "position", lat, lng, heading? }`, joined passengers receive `{ type: "driver-position", ... }` |
+| POST | `/admin/login` `{ password }` | admin: master password, returns an 8 h admin token (`429` after 5 failures) |
+| GET / POST | `/admin/users` | admin: list / create (`{ name, email, address, role, password }`) |
+| PATCH / DELETE | `/admin/users/:id` | admin: edit any field (incl. `role`, `password`) / delete. `409 USER_IN_ACTIVE_TRIP` while in the running trip |
 | WS | `/ws` | send `{ "type": "auth", "token": "..." }` first. You then receive `{ type: "state", data }` on every change |
 
 Passengers never receive other passengers' names or addresses.
