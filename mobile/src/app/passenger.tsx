@@ -111,7 +111,12 @@ function PassengerScreen() {
         <View>
           <Text style={styles.caption}>{trip ? 'Ruta en curso:' : 'Próxima ruta:'}</Text>
           <View style={styles.banner}>
-            <RouteBanner label={ROUTE_LABELS[trip?.route ?? state.nextRoute]} highlighted={!!trip && !joined} />
+            <RouteBanner
+              label={ROUTE_LABELS[trip?.route ?? state.nextRoute]}
+              highlighted={!!trip && !joined}
+              // Center stage until the passenger joins; then it shrinks to leave room for the upcoming map.
+              size={joined ? 'compact' : 'large'}
+            />
           </View>
           {error && (
             <Text style={styles.error} accessibilityRole="alert">
