@@ -38,15 +38,15 @@ docker compose up -d --build
 | `POSTGRES_PASSWORD` | recommended | defaults to `carreras` |
 | `EXPO_ACCESS_TOKEN` | no | only if "enhanced push security" is enabled in Expo |
 
-Passengers sign up from the app ("Crear cuenta"). Sign-up **always** creates a passenger. Drivers are assigned manually:
+This is a **private app: there is no self sign-up**. Only an administrator creates accounts, for now with these scripts (a web admin panel is planned):
 
 ```bash
-# Promote an existing account (the app switches to driver screens the next time it opens)
-docker compose exec api node scripts/set-role.ts --email ana@example.com --role driver
-
-# Or create any user directly
+# Create a passenger (or --role driver)
 docker compose exec api node scripts/create-user.ts \
-  --email ana@example.com --password 'min-8-chars' --name "Ana" --address "Calle 1 #23" --role driver
+  --email ana@example.com --password 'min-8-chars' --name "Ana" --address "Calle 1 #23" --role passenger
+
+# Change an existing account's role (the app switches screens the next time it opens)
+docker compose exec api node scripts/set-role.ts --email ana@example.com --role driver
 ```
 
 The schema is applied automatically on every boot (`backend/src/infrastructure/postgres/schema.sql`).
@@ -64,6 +64,8 @@ TEST_DATABASE_URL=postgres://user:pass@localhost:5432/test npm test
 ```
 
 ## Run the app
+
+The app is **portrait only**. On phones it is locked by `app.json` (`orientation`, plus `ios.requireFullScreen` so iPads honor the lock). Browsers cannot lock orientation, so on a phone or tablet in landscape the web build shows a "Gira tu dispositivo" screen; desktops are never blocked.
 
 ```bash
 cd mobile
@@ -114,11 +116,10 @@ The web map loads MapLibre's worker from `mobile/public/maplibre-gl-worker.mjs`.
 
 ## API
 
-All routes except `/health`, `/auth/register` and `/auth/login` need `Authorization: Bearer <token>`. Every trip endpoint returns the role-specific state view.
+All routes except `/health` and `/auth/login` need `Authorization: Bearer <token>`. Every trip endpoint returns the role-specific state view.
 
 | Method | Path | Who |
 |---|---|---|
-| POST | `/auth/register` `{ name, email, password (8+), address }` | anyone: always creates a passenger, `409 EMAIL_TAKEN` on duplicates |
 | POST | `/auth/login` | anyone |
 | GET | `/me` | any user |
 | PUT | `/me/push-token` `{ token: string \| null }` | any user |
