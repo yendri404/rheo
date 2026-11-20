@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY src ./src
 COPY scripts ./scripts
+COPY admin ./admin
 USER node
 EXPOSE 3000
 # Node runs TypeScript directly (type stripping), so there is no build step.

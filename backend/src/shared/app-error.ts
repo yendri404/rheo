@@ -8,7 +8,10 @@ export type ErrorCode =
   | 'PASSENGER_NOT_IN_TRIP'
   | 'PENDING_STOPS'
   | 'STOP_ALREADY_CONFIRMED'
-  | 'VALIDATION_FAILED';
+  | 'VALIDATION_FAILED'
+  | 'USER_NOT_FOUND'
+  | 'USER_IN_ACTIVE_TRIP'
+  | 'TOO_MANY_ATTEMPTS';
 
 export class AppError extends Error {
   readonly code: ErrorCode;

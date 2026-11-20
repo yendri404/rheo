@@ -25,6 +25,8 @@ services:
     environment:
       DATABASE_URL: postgres://carreras:${POSTGRES_PASSWORD:-carreras}@db:5432/carreras
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      # Admin panel at /admin. Leave empty to disable the panel (12+ characters when set).
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       PORT: 3000
     ports:
       - "3000:3000"

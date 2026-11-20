@@ -4,6 +4,8 @@ import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { z, ZodError } from 'zod';
 import type { WsHub } from '../infrastructure/realtime/ws-hub.ts';
+import { registerAdminRoutes } from '../admin/admin-routes.ts';
+import { AdminService } from '../admin/admin-service.ts';
 import { registerLocationRoutes } from '../location/location-relay.ts';
 import { AppError, type ErrorCode } from '../shared/app-error.ts';
 import type { TripService } from '../trips/trip-service.ts';
@@ -13,7 +15,8 @@ import type { User, UserRepository } from '../users/user.ts';
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
-    payload: { sub: string };
+    /** `scope: 'admin'` marks admin-panel sessions, which the app routes reject. */
+    payload: { sub: string; scope?: 'admin' };
   }
 }
 
@@ -25,6 +28,8 @@ export type AppDependencies = {
   jwtSecret: string;
   tokenTtl?: string;
   logger?: boolean;
+  /** Master password for the admin panel. When unset, the panel and its API do not exist. */
+  adminPassword?: string;
 };
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
@@ -38,6 +43,9 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   PENDING_STOPS: 409,
   STOP_ALREADY_CONFIRMED: 409,
   VALIDATION_FAILED: 400,
+  USER_NOT_FOUND: 404,
+  USER_IN_ACTIVE_TRIP: 409,
+  TOO_MANY_ATTEMPTS: 429,
 };
 
 const WS_AUTH_TIMEOUT_MS = 5_000;
@@ -74,12 +82,14 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   });
 
   async function userFromToken(token: string): Promise<User> {
-    let payload: { sub: string };
+    let payload: { sub: string; scope?: 'admin' };
     try {
-      payload = app.jwt.verify<{ sub: string }>(token);
+      payload = app.jwt.verify<{ sub: string; scope?: 'admin' }>(token);
     } catch {
       throw new AppError('UNAUTHENTICATED', 'Invalid or expired session.');
     }
+    // Admin-panel sessions are not app users (and their `sub` is not a user id).
+    if (payload.scope === 'admin') throw new AppError('UNAUTHENTICATED', 'Invalid or expired session.');
     const user = await users.findById(payload.sub);
     if (!user) throw new AppError('UNAUTHENTICATED', 'Invalid or expired session.');
     return user;
@@ -158,6 +168,10 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   });
 
   registerLocationRoutes(app, { authenticate: userFromToken, tripService });
+
+  if (deps.adminPassword) {
+    registerAdminRoutes(app, { adminPassword: deps.adminPassword, adminService: new AdminService(users, tripService) });
+  }
 
   app.addHook('onClose', async () => hub.close());
 

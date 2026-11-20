@@ -1,4 +1,13 @@
-import { normalizeEmail, type NewUser, type Role, type User, type UserRepository, type UserWithCredentials } from '../../users/user.ts';
+import {
+  normalizeEmail,
+  type NewUser,
+  type Role,
+  type User,
+  type UserPatch,
+  type UserRepository,
+  type UserSummary,
+  type UserWithCredentials,
+} from '../../users/user.ts';
 import { emailTaken } from '../../users/errors.ts';
 import { isUniqueViolation, type Sql } from './database.ts';
 
@@ -22,6 +31,37 @@ export class PostgresUserRepository implements UserRepository {
       if (isUniqueViolation(error, 'users_email_key')) throw emailTaken();
       throw error;
     }
+  }
+
+  async list(): Promise<UserSummary[]> {
+    const rows = await this.#sql<(UserRow & { created_at: Date })[]>`
+      SELECT id, email, name, address, role, password_hash, created_at FROM users ORDER BY role, name`;
+    return rows.map((row) => ({ ...toUser(row), createdAt: row.created_at }));
+  }
+
+  async update(id: string, patch: UserPatch): Promise<User | null> {
+    const columns: Record<string, string> = {};
+    if (patch.email !== undefined) columns.email = normalizeEmail(patch.email);
+    if (patch.name !== undefined) columns.name = patch.name;
+    if (patch.address !== undefined) columns.address = patch.address;
+    if (patch.role !== undefined) columns.role = patch.role;
+    if (patch.passwordHash !== undefined) columns.password_hash = patch.passwordHash;
+    if (Object.keys(columns).length === 0) return this.findById(id);
+    try {
+      // sql(columns) expands to a parameterized "col = $n, ..." list, only for the fields provided.
+      const [row] = await this.#sql<UserRow[]>`
+        UPDATE users SET ${this.#sql(columns)} WHERE id = ${id}
+        RETURNING id, email, name, address, role, password_hash`;
+      return row ? toUser(row) : null;
+    } catch (error) {
+      if (isUniqueViolation(error, 'users_email_key')) throw emailTaken();
+      throw error;
+    }
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const rows = await this.#sql`DELETE FROM users WHERE id = ${id} RETURNING 1`;
+    return rows.length > 0;
   }
 
   async setRole(email: string, role: Role): Promise<boolean> {

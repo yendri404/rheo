@@ -6,6 +6,12 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default('0.0.0.0'),
   EXPO_ACCESS_TOKEN: z.string().optional(),
+  // Admin panel master password. Empty or unset disables the panel entirely.
+  ADMIN_PASSWORD: z
+    .string()
+    .optional()
+    .transform((value) => (value ? value : undefined))
+    .refine((value) => value === undefined || value.length >= 12, 'ADMIN_PASSWORD must be at least 12 characters'),
 });
 
 export type Config = z.infer<typeof schema>;

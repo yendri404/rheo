@@ -80,6 +80,50 @@ describe.each(factories)('repository contract: %s', (_name, factory) => {
     expect(await users.setRole('ghost@test.dev', 'driver')).toBe(false);
   });
 
+  it('lists users sorted by role then name, without password hashes', async () => {
+    await users.create({ email: 'zoe@test.dev', passwordHash: 'x', name: 'Zoe', address: 'Z', role: 'passenger' });
+    await users.create({ email: 'ana@test.dev', passwordHash: 'x', name: 'Ana', address: 'A', role: 'passenger' });
+    await users.create({ email: 'carlos@test.dev', passwordHash: 'x', name: 'Carlos', address: '', role: 'driver' });
+
+    const listed = await users.list();
+
+    expect(listed.map((user) => user.name)).toEqual(['Carlos', 'Ana', 'Zoe']);
+    expect(listed[0]).toEqual({
+      id: expect.any(String),
+      email: 'carlos@test.dev',
+      name: 'Carlos',
+      address: '',
+      role: 'driver',
+      createdAt: expect.any(Date),
+    });
+    expect(listed[0]).not.toHaveProperty('passwordHash');
+  });
+
+  it('updates only the given fields, normalizing the email', async () => {
+    const ana = await users.create({ email: 'ana@test.dev', passwordHash: 'old', name: 'Ana', address: 'A', role: 'passenger' });
+
+    const updated = await users.update(ana.id, { name: 'Ana María', email: ' ANA.M@Test.dev ', passwordHash: 'new' });
+
+    expect(updated).toEqual({ ...ana, name: 'Ana María', email: 'ana.m@test.dev' });
+    expect((await users.findByEmail('ana.m@test.dev'))!.passwordHash).toBe('new');
+    expect(await users.findByEmail('ana@test.dev')).toBeNull();
+  });
+
+  it('rejects updating to an email another user has, and returns null for unknown ids', async () => {
+    const ana = await users.create({ email: 'ana@test.dev', passwordHash: 'x', name: 'Ana', address: 'A', role: 'passenger' });
+    await users.create({ email: 'beto@test.dev', passwordHash: 'x', name: 'Beto', address: 'B', role: 'passenger' });
+
+    await expect(users.update(ana.id, { email: 'BETO@test.dev' })).rejects.toMatchObject({ code: 'EMAIL_TAKEN' });
+    expect(await users.update('00000000-0000-0000-0000-000000000000', { name: 'X' })).toBeNull();
+  });
+
+  it('deletes a user and reports whether it existed', async () => {
+    const ana = await users.create({ email: 'ana@test.dev', passwordHash: 'x', name: 'Ana', address: 'A', role: 'passenger' });
+    expect(await users.delete(ana.id)).toBe(true);
+    expect(await users.findById(ana.id)).toBeNull();
+    expect(await users.delete(ana.id)).toBe(false);
+  });
+
   it('moves a push token to the latest user that registers it', async () => {
     const ana = await passenger('ana');
     const beto = await passenger('beto');
