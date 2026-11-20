@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { SessionProvider } from '../session/session-context';
+import { PortraitGuard } from '../ui/portrait-guard';
 import { colors } from '../ui/theme';
 
 export default function RootLayout() {
@@ -15,6 +16,7 @@ export default function RootLayout() {
       <SessionProvider>
         <StatusBar style="light" />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.primary }, animation: 'fade' }} />
+        <PortraitGuard />
       </SessionProvider>
     </SafeAreaProvider>
   );

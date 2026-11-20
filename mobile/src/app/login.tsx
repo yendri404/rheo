@@ -1,4 +1,4 @@
-import { Link, Redirect } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text } from 'react-native';
 import { errorMessage } from '../api/client';
@@ -43,9 +43,8 @@ export default function LoginScreen() {
         footer={
           <>
             <PrimaryButton label="Iniciar sesión" onPress={submit} disabled={!canSubmit} loading={submitting} />
-            <Link href="/register" replace style={styles.link}>
-              ¿No tienes cuenta? <Text style={styles.linkStrong}>Crear cuenta</Text>
-            </Link>
+            {/* Private app: accounts are created by an administrator, there is no sign-up. */}
+            <Text style={styles.hint}>¿No tienes cuenta? Pídela al administrador.</Text>
           </>
         }
       >
@@ -83,6 +82,5 @@ const styles = StyleSheet.create({
   title: { fontFamily: fonts.regular, fontSize: 34, color: colors.dark, marginTop: 48 },
   subtitle: { fontFamily: fonts.regular, fontSize: 15, color: colors.background, marginTop: 6 },
   error: { fontFamily: fonts.regular, color: colors.danger, fontSize: 14, marginTop: 4 },
-  link: { fontFamily: fonts.regular, color: colors.dark, fontSize: 14, textAlign: 'center', marginTop: 16 },
-  linkStrong: { fontFamily: fonts.bold, color: colors.primary },
+  hint: { fontFamily: fonts.regular, color: colors.disabledText, fontSize: 14, textAlign: 'center', marginTop: 16 },
 });

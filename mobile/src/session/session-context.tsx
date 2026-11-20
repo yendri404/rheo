@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ApiError, authenticatedApi, login, register, type AuthenticatedApi, type AuthResult, type Registration } from '../api/client';
+import { ApiError, authenticatedApi, login, type AuthenticatedApi, type AuthResult } from '../api/client';
 import type { User } from '../api/types';
 import { registerForPushNotifications } from '../notifications/push';
 import { secureStorage } from './secure-storage';
@@ -13,7 +13,6 @@ type SessionContextValue = {
   session: Session | null | undefined;
   api: AuthenticatedApi | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (registration: Registration) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -88,8 +87,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [persist],
   );
 
-  const signUp = useCallback(async (registration: Registration) => persist(await register(registration)), [persist]);
-
   const signOut = useCallback(async () => {
     // Stop notifications for this device before forgetting the session.
     await api?.setPushToken(null).catch(() => {});
@@ -97,8 +94,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [api, clear]);
 
   const value = useMemo(
-    () => ({ session, api, signIn, signUp, signOut }),
-    [session, api, signIn, signUp, signOut],
+    () => ({ session, api, signIn, signOut }),
+    [session, api, signIn, signOut],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
