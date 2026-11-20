@@ -102,6 +102,14 @@ npm run simulate:driver -- --lat 10.5 --lng -66.9 --radius 600 --lap 90
 
 Then log in as a passenger at http://localhost:8081, tap "Usaré el transporte", and watch the pin move. Drag the map to stop following the driver, and tap "Centrar en el chofer" to follow again.
 
+**"Driver nearby" alert.** When the driver is within ~200 m, the passenger gets a notification (once per trip), the map border turns from green to the ticket's yellow, and the header shows "¡El chofer está a menos de 200 m!". The passenger's position comes from their own device and never leaves it: the distance is computed on the phone or in the browser. Because of that, the alert works while the app is open. Alerting with the app closed would require the server to know the passenger's location (a separate decision).
+
+To test it in the browser:
+
+1. Run the simulator: `npm run simulate:driver -- --start-trip` (laps of 500 m radius at ~40 km/h).
+2. In Chrome DevTools, open Sensors > Location and set a custom location on the loop, for example `10.5061, -66.910032` (500 m east of the default center).
+3. Log in as a passenger, tap "Usaré el transporte" and allow notifications. When the driver passes by, the border turns yellow and the notification appears.
+
 The web map loads MapLibre's worker from `mobile/public/maplibre-gl-worker.mjs`. That file is copied there by `npm install` (postinstall) and is not committed.
 
 ## API
