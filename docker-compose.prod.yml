@@ -1,0 +1,39 @@
+# Production: pulls the prebuilt image (see .github/workflows/docker.yml) instead of building,
+# and keeps Postgres private. Put a TLS reverse proxy (Caddy, nginx, your PaaS) in front of port 3000.
+#
+#   API_IMAGE=ghcr.io/yendri404/rheo-api:main JWT_SECRET=... POSTGRES_PASSWORD=... \
+#     docker compose -f docker-compose.prod.yml up -d
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: carreras
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: carreras
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U carreras -d carreras"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: ${API_IMAGE:?Set API_IMAGE, e.g. ghcr.io/<owner>/<repo>-api:main}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://carreras:${POSTGRES_PASSWORD}@db:5432/carreras
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+
+volumes:
+  db-data:
