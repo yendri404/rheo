@@ -9,6 +9,7 @@ import { useTripState } from '../realtime/use-trip-state';
 import { useAuthenticated, useSession } from '../session/session-context';
 import { Checkmark } from '../ui/checkmark';
 import { useConfirm } from '../ui/confirm-dialog';
+import { Greeting } from '../ui/greeting';
 import { motion } from '../ui/motion';
 import { PassengerRow } from '../ui/passenger-row';
 import { PrimaryButton } from '../ui/primary-button';
@@ -29,7 +30,8 @@ function DriverScreen() {
   const [justFinished, setJustFinished] = useState(false);
   // Inline instead of Alert.alert, which is a no-op on web.
   const [error, setError] = useState<string | null>(null);
-  const tracking = useDriverTracking(Boolean(state?.activeTrip));
+  // Only the morning route shares GPS; Norte/Sur passengers have no map.
+  const tracking = useDriverTracking(state?.activeTrip?.route === 'manana');
 
   async function run(key: string, action: () => Promise<unknown>) {
     setBusy(key);
@@ -57,7 +59,11 @@ function DriverScreen() {
   async function confirmStop(passenger: DriverPassenger) {
     const ok = await confirm({
       title: `¿Confirmar parada de ${passenger.name}?`,
-      message: 'Confírmala solo cuando el pasajero ya esté a bordo. No se puede deshacer.',
+      // Morning routes pick passengers up; evening routes (Norte/Sur) drop them off.
+      message:
+        state?.activeTrip?.route === 'manana'
+          ? 'Confírmala solo cuando el pasajero ya esté a bordo. No se puede deshacer.'
+          : 'Confírmala solo cuando el pasajero ya haya llegado a su destino. No se puede deshacer.',
       details: [passenger.address || 'Sin dirección'],
       confirmLabel: 'Confirmar',
     });
@@ -69,7 +75,7 @@ function DriverScreen() {
       title: `¿Terminar la ruta ${ROUTE_LABELS[trip.route]}?`,
       message: 'Verifica el resumen antes de terminar. No se puede deshacer.',
       details: [
-        `Pasajeros recogidos: ${trip.passengers.length}`,
+        `${trip.route === 'manana' ? 'Pasajeros recogidos' : 'Pasajeros dejados en destino'}: ${trip.passengers.length}`,
         `Siguiente ruta: ${ROUTE_LABELS[state!.nextRoute]}`,
       ],
       confirmLabel: 'Terminar',
@@ -120,6 +126,7 @@ function DriverScreen() {
     return (
       <ScreenLayout
         contentKey="loading"
+        headerAlign="bottom"
         header={<Text style={styles.headerCaption}>Cargando…</Text>}
         onSignOut={signOut}
         connected={connected}
@@ -137,6 +144,9 @@ function DriverScreen() {
       <ScreenLayout
         contentKey="home"
         sheet="content"
+        driftingDots
+        headerAlign="bottom"
+        header={<Greeting name={session.user.name} />}
         onSignOut={askSignOut}
         connected={connected}
         footer={
@@ -166,6 +176,7 @@ function DriverScreen() {
   return (
     <ScreenLayout
       contentKey={trip.id}
+      headerAlign="bottom"
       onSignOut={askSignOut}
       connected={connected}
       header={

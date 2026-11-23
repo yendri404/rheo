@@ -13,6 +13,7 @@ import { useTripState } from '../realtime/use-trip-state';
 import { useAuthenticated, useSession } from '../session/session-context';
 import { motion } from '../ui/motion';
 import { PrimaryButton } from '../ui/primary-button';
+import { Greeting } from '../ui/greeting';
 import { RouteBanner } from '../ui/route-banner';
 import { ScreenLayout } from '../ui/screen-layout';
 import { colors, fonts } from '../ui/theme';
@@ -22,13 +23,6 @@ export default function PassengerRoute() {
   if (!session || !api) return <Redirect href="/login" />;
   if (session.user.role !== 'passenger') return <Redirect href="/" />;
   return <PassengerScreen />;
-}
-
-function greeting(date = new Date()): string {
-  const hour = date.getHours();
-  if (hour < 12) return 'Buenos días';
-  if (hour < 19) return 'Buenas tardes';
-  return 'Buenas noches';
 }
 
 function PassengerScreen() {
@@ -52,9 +46,11 @@ function PassengerScreen() {
   const trip = state?.activeTrip ?? null;
   const joined = trip?.joined ?? false;
   const pickedUp = trip?.confirmed ?? false;
-  const driverLocation = useDriverLocation(session.token, joined && trip !== null);
-  // Proximity only matters while waiting to be picked up. The passenger's position stays on the device.
-  const waitingForPickup = joined && !pickedUp && trip !== null;
+  // The map and both location feeds only matter while waiting to be picked up. Once on board the
+  // driver socket and GPS are closed to save mobile data and battery. The passenger's position stays on the device.
+  // Evening routes (Norte/Sur) have no map or GPS at all, only the morning route does.
+  const waitingForPickup = joined && !pickedUp && trip !== null && trip.route === 'manana';
+  const driverLocation = useDriverLocation(session.token, waitingForPickup);
   const ownLocation = useOwnLocation(waitingForPickup);
   const proximity = useDriverProximity(
     waitingForPickup ? driverLocation.position : null,
@@ -78,14 +74,14 @@ function PassengerScreen() {
     <ScreenLayout
       // A started or finished trip replays the entrance animation while the app is open.
       contentKey={!state ? 'loading' : (trip?.id ?? 'idle')}
+      // Without the map the sheet hugs its content, leaving the (dotted) green area as the focus.
+      sheet={waitingForPickup ? 'fill' : 'content'}
+      headerAlign="bottom"
       onSignOut={signOut}
       connected={connected}
       header={
         <>
-          <Text style={styles.greeting}>{greeting()}</Text>
-          <Text style={styles.name} numberOfLines={1}>
-            {session.user.name}
-          </Text>
+          <Greeting name={session.user.name} />
           <Animated.Text key={status} entering={motion.textEnter} style={styles.status}>
             {status}
           </Animated.Text>
@@ -134,11 +130,11 @@ function PassengerScreen() {
             <RouteBanner
               label={ROUTE_LABELS[trip?.route ?? state.nextRoute]}
               highlighted={!!trip && !joined}
-              // Center stage until the passenger joins; then it shrinks to leave room for the upcoming map.
-              size={joined ? 'compact' : 'large'}
+              // Center stage unless the map is showing; then it shrinks to leave room for it.
+              size={waitingForPickup ? 'compact' : 'large'}
             />
           </View>
-          {joined && trip && (
+          {waitingForPickup && (
             <Animated.View entering={motion.sheetEnter} style={styles.map}>
               <DriverMap
                 position={driverLocation.position}
@@ -167,8 +163,6 @@ function PassengerScreen() {
 }
 
 const styles = StyleSheet.create({
-  greeting: { fontFamily: fonts.regular, fontSize: 18, color: colors.white, marginTop: 24 },
-  name: { fontFamily: fonts.regular, fontSize: 38, color: colors.background, marginTop: 4 },
   // Translucency lives in the color: the entering animation owns opacity.
   status: { fontFamily: fonts.regular, fontSize: 15, color: 'rgba(234, 240, 241, 0.85)', marginTop: 8 },
   caption: { fontFamily: fonts.regular, fontSize: 22, color: colors.dark },
