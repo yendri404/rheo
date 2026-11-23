@@ -7,6 +7,7 @@ import { ROUTE_LABELS, type PassengerState } from '../api/types';
 import { DriverMap } from '../map/driver-map';
 import { useDriverProximity } from '../map/use-driver-proximity';
 import { prepareLocalNotifications } from '../notifications/local';
+import { useNotificationPrompt, useTripStartedNotification } from '../notifications/use-trip-notifications';
 import { useDriverLocation } from '../realtime/use-driver-location';
 import { useOwnLocation } from '../realtime/use-own-location';
 import { useTripState } from '../realtime/use-trip-state';
@@ -30,6 +31,8 @@ function PassengerScreen() {
   const { state, setState, connected } = useTripState<PassengerState>(session.token, api, signOut);
   const [busy, setBusy] = useState<'join' | 'leave' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useTripStartedNotification(state);
+  const notificationPrompt = useNotificationPrompt();
 
   async function run(kind: 'join' | 'leave', action: () => Promise<unknown>) {
     setBusy(kind);
@@ -134,6 +137,16 @@ function PassengerScreen() {
               size={waitingForPickup ? 'compact' : 'large'}
             />
           </View>
+          {notificationPrompt.canAsk && !joined && (
+            <Pressable
+              onPress={notificationPrompt.ask}
+              hitSlop={10}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.cancel, styles.notify, pressed && styles.cancelPressed]}
+            >
+              <Text style={styles.cancelLabel}>Activar avisos de ruta</Text>
+            </Pressable>
+          )}
           {waitingForPickup && (
             <Animated.View entering={motion.sheetEnter} style={styles.map}>
               <DriverMap
@@ -181,6 +194,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelPressed: { backgroundColor: colors.disabled },
+  notify: { marginTop: 20 },
   cancelLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.disabledText },
   error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginTop: 20, textAlign: 'center' },
 });
