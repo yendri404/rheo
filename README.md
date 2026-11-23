@@ -52,6 +52,30 @@ docker compose exec api node scripts/set-role.ts --email ana@example.com --role 
 
 The schema is applied automatically on every boot (`backend/src/infrastructure/postgres/schema.sql`).
 
+### Deploy the API anywhere
+
+The API is one container plus Postgres, so it runs on any host that runs Docker (VPS, Fly.io, Railway, Render, a home server).
+
+1. Push to GitHub. `.github/workflows/ci.yml` runs typecheck and tests (backend against a real Postgres, mobile typecheck). On `main` and `v*` tags, `docker.yml` publishes `ghcr.io/<owner>/<repo>-api` to GitHub Container Registry.
+2. On the server, with a TLS reverse proxy in front of port 3000:
+
+```bash
+export API_IMAGE=ghcr.io/<owner>/<repo>-api:main
+export JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))")
+export POSTGRES_PASSWORD=<strong-password>
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml exec api node scripts/create-user.ts --email you@example.com --password '...' --name "You" --role driver
+```
+
+3. Point the app at it: `EXPO_PUBLIC_API_URL=https://api.example.com` when building the mobile app (see `mobile/eas.json`).
+
+| Extra variable | Notes |
+|---|---|
+| `TRUST_PROXY` | `true` behind a reverse proxy (the prod compose defaults to it) so the login throttle sees real client IPs. Leave `false` if the API is exposed directly. |
+| `PORT` / `HOST` | default `3000` / `0.0.0.0` |
+
+The image has a `HEALTHCHECK` on `/health`. WebSockets need proxy support for upgrades (Caddy and Fly do it by default; in nginx add `proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`). If the package is private on GHCR, run `docker login ghcr.io` on the server with a token that has `read:packages`.
+
 ### Develop and test
 
 ```bash
