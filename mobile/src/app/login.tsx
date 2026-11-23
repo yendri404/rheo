@@ -1,8 +1,9 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text } from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { errorMessage } from '../api/client';
 import { useSession } from '../session/session-context';
+import { Logo } from '../ui/logo';
 import { PrimaryButton } from '../ui/primary-button';
 import { ScreenLayout } from '../ui/screen-layout';
 import { TextField } from '../ui/text-field';
@@ -35,9 +36,13 @@ export default function LoginScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScreenLayout
         footerPosition="inline"
+        driftingDots
         header={
           <>
-            <Text style={styles.title}>Rheo</Text>
+            <Text style={styles.title}>Eureka Rheo</Text>
+            <View style={styles.logo}>
+              <Logo width={200} />
+            </View>
             <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
           </>
         }
@@ -80,7 +85,8 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontFamily: fonts.regular, fontSize: 34, color: colors.dark, marginTop: 48 },
+  title: { fontFamily: fonts.regular, fontSize: 48, color: colors.white, marginTop: 40 },
+  logo: { marginTop: 16 },
   subtitle: { fontFamily: fonts.regular, fontSize: 15, color: colors.background, marginTop: 6 },
   error: { fontFamily: fonts.regular, color: colors.danger, fontSize: 14, marginTop: 4 },
   hint: { fontFamily: fonts.regular, color: colors.disabledText, fontSize: 14, textAlign: 'center', marginTop: 16 },
