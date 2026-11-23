@@ -1,4 +1,4 @@
-# Proyecto Carreras
+# Rheo
 
 A transport app with two roles. The **driver** starts a route. **Passengers** get a push notification and can tap "Usaré el transporte", and they show up live in the driver's list. The driver confirms each stop and finishes the route once every stop is confirmed. Routes rotate on every start: **Mañana → Norte → Sur → Mañana**.
 
@@ -117,7 +117,7 @@ Expo Go does not support remote push on Android, so use a development build: `np
 
 ## Live driver map (testing without driving)
 
-Passengers who joined the active trip see the driver as a pin on a map. The driver's position is relayed over `WS /ws/location` and is never stored: it lives only in memory, and only while a trip is active. The map currently runs on **web** (MapLibre + free OpenFreeMap tiles, no API key). On phones, a placeholder is shown until the native map (which needs a development build) is added.
+Passengers who joined the active trip see the driver as a pin on a map. The driver's position is relayed over `WS /ws/location` and is never stored: it lives only in memory, and only while a trip is active. The map uses MapLibre with free OpenFreeMap tiles (no API key) on both platforms: `maplibre-gl` on **web** and `@maplibre/maplibre-react-native` on **phones**, which needs a development build (`npx expo run:android` / `run:ios`). In Expo Go, or in a development build made before the map was added, the rest of the app works and a placeholder replaces the map.
 
 The driver's phone shares its real GPS **only while a trip is open**, and keeps sharing with the phone locked or the app in the background (Android shows a persistent "Ruta en curso" notification; iOS shows the blue location pill). It reports over `POST /location`, because the OS suspends WebSockets in the background, at most every 5 s and only after moving 20 m, so a parked driver sends nothing. Tracking stops when the driver finishes the trip, signs out, or the server answers `409 NO_ACTIVE_TRIP` (this covers an app killed mid-trip). If the driver refuses "Always" location, it is shared only while the app is open, and the driver screen says so. On web it is foreground only.
 
