@@ -1,0 +1,12 @@
+node_modules
+android
+ios
+dist
+web-build
+.expo
+.claude
+.env
+.env.*
+Dockerfile
+.dockerignore
+public/maplibre-gl-worker.mjs

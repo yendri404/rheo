@@ -76,6 +76,16 @@ docker compose -f docker-compose.prod.yml exec api node scripts/create-user.ts -
 
 The image has a `HEALTHCHECK` on `/health`. WebSockets need proxy support for upgrades (Caddy and Fly do it by default; in nginx add `proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`). If the package is private on GHCR, run `docker login ghcr.io` on the server with a token that has `read:packages`.
 
+### Deploy on Railway (API + web app)
+
+Railway builds each folder from its `Dockerfile` and gives every service an HTTPS domain. In one Railway project, connected to this GitHub repository:
+
+1. **Postgres**: add the PostgreSQL database.
+2. **API** service: root directory `backend`. Variables: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `JWT_SECRET` (32+ characters), `TRUST_PROXY=true`, optionally `ADMIN_PASSWORD`. Set the healthcheck path to `/health` and generate a domain. Migrations run on startup.
+3. **Web** service: root directory `mobile`. Variable: `EXPO_PUBLIC_API_URL=https://<api domain>` (it is baked in at build time, so redeploy the web service when it changes). Generate a domain.
+
+Pick the branch each service deploys from in its settings. The web service is the PWA: `mobile/Dockerfile` runs `expo export` and serves `dist/` with Caddy (`mobile/Caddyfile`, single-page fallback, `no-cache` on everything except hashed `/_expo/static/` files so new deploys reach installed apps). Open its domain in Chrome on Android and use **Install app**, or **Add to Home Screen** in Safari on iOS. On web, the driver's location is only shared while the app is open on screen.
+
 ### Develop and test
 
 ```bash
