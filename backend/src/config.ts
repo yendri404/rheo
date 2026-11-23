@@ -6,6 +6,9 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default('0.0.0.0'),
   EXPO_ACCESS_TOKEN: z.string().optional(),
+  // Set to "true" when the API sits behind a reverse proxy (Caddy, nginx, a PaaS router) so
+  // request.ip is the real client and the login throttle does not lock everyone out together.
+  TRUST_PROXY: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   // Admin panel master password. Empty or unset disables the panel entirely.
   ADMIN_PASSWORD: z
     .string()

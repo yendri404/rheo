@@ -22,6 +22,7 @@ const app = await buildApp({
   authService: new AuthService(users),
   jwtSecret: config.JWT_SECRET,
   adminPassword: config.ADMIN_PASSWORD,
+  trustProxy: config.TRUST_PROXY,
   logger: true,
   tripService: new TripService({
     trips: new PostgresTripRepository(sql),

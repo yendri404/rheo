@@ -30,6 +30,8 @@ export type AppDependencies = {
   logger?: boolean;
   /** Master password for the admin panel. When unset, the panel and its API do not exist. */
   adminPassword?: string;
+  /** Trust X-Forwarded-* headers. Only enable behind a reverse proxy you control. */
+  trustProxy?: boolean;
 };
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
@@ -59,7 +61,7 @@ const wsAuthMessage = z.object({ type: z.literal('auth'), token: z.string() });
 
 export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> {
   const { users, hub, tripService, authService } = deps;
-  const app = Fastify({ logger: deps.logger ?? false });
+  const app = Fastify({ logger: deps.logger ?? false, trustProxy: deps.trustProxy ?? false });
 
   // @fastify/cors only allows GET/HEAD/POST by default; browsers would block PUT and DELETE preflights.
   await app.register(cors, { origin: true, methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'] });
