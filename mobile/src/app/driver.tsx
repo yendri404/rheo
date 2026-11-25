@@ -3,11 +3,13 @@ import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { errorMessage } from '../api/client';
-import { ROUTE_LABELS, type DriverPassenger, type DriverState, type DriverTrip, type RouteName } from '../api/types';
+import type { Company, DriverPassenger, DriverState, DriverTrip, Route } from '../api/types';
+import { useSelectedCompany } from '../companies/use-selected-company';
 import { useDriverTracking } from '../location/use-driver-tracking';
 import { useTripState } from '../realtime/use-trip-state';
 import { useAuthenticated, useSession } from '../session/session-context';
 import { Checkmark } from '../ui/checkmark';
+import { CompanySelect } from '../ui/company-select';
 import { useConfirm } from '../ui/confirm-dialog';
 import { Greeting } from '../ui/greeting';
 import { motion } from '../ui/motion';
@@ -23,15 +25,54 @@ export default function DriverRoute() {
   return <DriverScreen />;
 }
 
+/** Resolves which of the driver's companies is on screen; everything below it belongs to that company. */
 function DriverScreen() {
-  const { session, api, signOut } = useAuthenticated();
-  const { state, setState, connected } = useTripState<DriverState>(session.token, api, signOut);
+  const { session, signOut, refreshUser } = useAuthenticated();
+  const { companies } = session.user;
+  const { company, ready, select } = useSelectedCompany(companies);
+
+  if (!ready) {
+    return (
+      <ScreenLayout contentKey="loading" headerAlign="bottom" header={<Text style={styles.headerCaption}>Cargando…</Text>} onSignOut={signOut}>
+        <ActivityIndicator color={colors.primary} />
+      </ScreenLayout>
+    );
+  }
+  if (!company) {
+    return (
+      <ScreenLayout
+        contentKey="no-company"
+        sheet="content"
+        headerAlign="bottom"
+        header={<Greeting name={session.user.name} />}
+        onSignOut={signOut}
+        footer={<PrimaryButton label="Volver a comprobar" onPress={refreshUser} />}
+      >
+        <Text style={styles.caption}>Tu cuenta todavía no está asignada a una empresa.</Text>
+        <Text style={styles.notice}>Pídele al administrador que te registre en una para ver sus rutas.</Text>
+      </ScreenLayout>
+    );
+  }
+  // Keyed by company: switching starts from a clean screen instead of showing the previous company's trip.
+  return <CompanyTrips key={company.id} company={company} companies={companies} onSelectCompany={select} />;
+}
+
+type CompanyTripsProps = { company: Company; companies: Company[]; onSelectCompany: (companyId: string) => void };
+
+function CompanyTrips({ company, companies, onSelectCompany }: CompanyTripsProps) {
+  const { session, api, signOut, refreshUser } = useAuthenticated();
+  const { state, setState, connected, unavailable } = useTripState<DriverState>(session.token, api, {
+    onUnauthorized: signOut,
+    companyId: company.id,
+    // Removed from this company while the app was open: the refreshed profile moves the driver to another one.
+    onCompanyUnavailable: refreshUser,
+  });
   const [busy, setBusy] = useState<string | null>(null);
   const [justFinished, setJustFinished] = useState(false);
   // Inline instead of Alert.alert, which is a no-op on web.
   const [error, setError] = useState<string | null>(null);
-  // Only the morning route shares GPS; Norte/Sur passengers have no map.
-  const tracking = useDriverTracking(state?.activeTrip?.route === 'manana');
+  // Only pickup routes share GPS; passengers of dropoff routes have no map.
+  const tracking = useDriverTracking(state?.activeTrip?.route.kind === 'pickup');
 
   async function run(key: string, action: () => Promise<unknown>) {
     setBusy(key);
@@ -47,42 +88,42 @@ function DriverScreen() {
 
   const { confirm, dialog } = useConfirm();
 
-  async function startTrip(route: RouteName) {
+  async function startTrip(route: Route) {
     const ok = await confirm({
-      title: `¿Empezar la ruta ${ROUTE_LABELS[route]}?`,
-      message: 'Todos los pasajeros recibirán una notificación y podrán anotarse.',
+      title: `¿Empezar la ruta ${route.name}?`,
+      message: `Todos los pasajeros de ${company.name} recibirán una notificación y podrán anotarse.`,
       confirmLabel: 'Empezar',
     });
-    if (ok) await run('start', api.startTrip);
+    if (ok) await run('start', () => api.startTrip(company.id));
   }
 
   async function confirmStop(passenger: DriverPassenger) {
     const ok = await confirm({
       title: `¿Confirmar parada de ${passenger.name}?`,
-      // Morning routes pick passengers up; evening routes (Norte/Sur) drop them off.
+      // Pickup routes collect passengers; dropoff routes take them to their destination.
       message:
-        state?.activeTrip?.route === 'manana'
+        state?.activeTrip?.route.kind === 'pickup'
           ? 'Confírmala solo cuando el pasajero ya esté a bordo. No se puede deshacer.'
           : 'Confírmala solo cuando el pasajero ya haya llegado a su destino. No se puede deshacer.',
       details: [passenger.address || 'Sin dirección'],
       confirmLabel: 'Confirmar',
     });
-    if (ok) await run(passenger.userId, () => api.confirmStop(passenger.userId));
+    if (ok) await run(passenger.userId, () => api.confirmStop(passenger.userId, company.id));
   }
 
   async function finishTrip(trip: DriverTrip) {
     const ok = await confirm({
-      title: `¿Terminar la ruta ${ROUTE_LABELS[trip.route]}?`,
+      title: `¿Terminar la ruta ${trip.route.name}?`,
       message: 'Verifica el resumen antes de terminar. No se puede deshacer.',
       details: [
-        `${trip.route === 'manana' ? 'Pasajeros recogidos' : 'Pasajeros dejados en destino'}: ${trip.passengers.length}`,
-        `Siguiente ruta: ${ROUTE_LABELS[state!.nextRoute]}`,
+        `${trip.route.kind === 'pickup' ? 'Pasajeros recogidos' : 'Pasajeros dejados en destino'}: ${trip.passengers.length}`,
+        ...(state?.nextRoute ? [`Siguiente ruta: ${state.nextRoute.name}`] : []),
       ],
       confirmLabel: 'Terminar',
     });
     if (!ok) return;
     await run('finish', async () => {
-      const next = await api.finishTrip();
+      const next = await api.finishTrip(company.id);
       setJustFinished(true);
       return next;
     });
@@ -122,21 +163,37 @@ function DriverScreen() {
     );
   }
 
+  const companySelect = (
+    <CompanySelect
+      companies={companies}
+      selected={company}
+      onSelect={onSelectCompany}
+      // The phone shares its GPS with the route on screen, so the driver stays with it until it ends.
+      lockedReason={state?.activeTrip ? 'Hay una ruta en curso. Termínala para cambiar de empresa.' : undefined}
+    />
+  );
+
   if (!state) {
     return (
       <ScreenLayout
         contentKey="loading"
         headerAlign="bottom"
-        header={<Text style={styles.headerCaption}>Cargando…</Text>}
+        header={<Text style={styles.headerCaption}>{unavailable ? 'Sin acceso a esta empresa' : 'Cargando…'}</Text>}
         onSignOut={signOut}
+        topStart={companySelect}
         connected={connected}
       >
-        <ActivityIndicator color={colors.primary} />
+        {unavailable ? (
+          <Text style={styles.notice}>Ya no estás registrado en {company.name}. Elige otra empresa.</Text>
+        ) : (
+          <ActivityIndicator color={colors.primary} />
+        )}
       </ScreenLayout>
     );
   }
 
   const trip = state.activeTrip;
+  const nextRoute = state.nextRoute;
 
   if (!trip) {
     return (
@@ -148,17 +205,21 @@ function DriverScreen() {
         headerAlign="bottom"
         header={<Greeting name={session.user.name} />}
         onSignOut={askSignOut}
+        topStart={companySelect}
         connected={connected}
         footer={
           <PrimaryButton
             label="Empezar nueva carrera"
             loading={busy === 'start'}
-            onPress={() => startTrip(state.nextRoute)}
+            disabled={!nextRoute}
+            onPress={() => nextRoute && startTrip(nextRoute)}
           />
         }
       >
-        <Text style={styles.caption}>Siguiente ruta:</Text>
-        <Text style={styles.nextRoute}>{ROUTE_LABELS[state.nextRoute]}</Text>
+        <Text style={styles.caption}>{nextRoute ? 'Siguiente ruta:' : `${company.name} todavía no tiene rutas.`}</Text>
+        <Text style={styles.nextRoute} numberOfLines={1} adjustsFontSizeToFit>
+          {nextRoute?.name ?? '—'}
+        </Text>
         {errorBanner}
         {dialog}
       </ScreenLayout>
@@ -178,11 +239,14 @@ function DriverScreen() {
       contentKey={trip.id}
       headerAlign="bottom"
       onSignOut={askSignOut}
+      topStart={companySelect}
       connected={connected}
       header={
         <>
           <Text style={styles.headerCaption}>Ruta:</Text>
-          <Text style={styles.headerTitle}>{ROUTE_LABELS[trip.route]}</Text>
+          <Text style={styles.headerTitle} numberOfLines={1} adjustsFontSizeToFit>
+            {trip.route.name}
+          </Text>
           {/* Re-keyed so each count change fades in instead of snapping. */}
           <Animated.Text key={status} entering={motion.textEnter} style={styles.headerStatus}>
             {status}

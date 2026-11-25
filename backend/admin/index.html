@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>Panel de usuarios · Rheo</title>
+    <title>Panel de control · Rheo</title>
     <!-- No favicon file: an empty icon stops the browser from requesting /favicon.ico (404). -->
     <link rel="icon" href="data:," />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,7 +16,7 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">Rheo</p>
-        <h1>Panel de usuarios</h1>
+        <h1>Panel de control</h1>
       </div>
       <button id="logout" class="pill" type="button" hidden>Cerrar sesión</button>
     </header>
@@ -34,38 +34,69 @@
         </form>
       </section>
 
-      <!-- Users -->
-      <section id="users-view" hidden>
-        <div class="toolbar">
-          <div class="segmented" role="tablist" aria-label="Filtrar por rol">
-            <button type="button" role="tab" data-filter="all" aria-selected="true">Todos <span data-count="all"></span></button>
-            <button type="button" role="tab" data-filter="passenger" aria-selected="false">Pasajeros <span data-count="passenger"></span></button>
-            <button type="button" role="tab" data-filter="driver" aria-selected="false">Choferes <span data-count="driver"></span></button>
-          </div>
-          <input id="search" type="search" placeholder="Buscar por nombre, correo o dirección" aria-label="Buscar" />
-          <button id="new-user" class="primary" type="button">+ Nuevo usuario</button>
+      <!-- Signed in: users and companies -->
+      <div id="panel" hidden>
+        <div class="segmented sections" role="tablist" aria-label="Sección">
+          <button type="button" role="tab" data-section="users" aria-selected="true">Usuarios</button>
+          <button type="button" role="tab" data-section="companies" aria-selected="false">Empresas</button>
         </div>
 
-        <div class="card table-card">
-          <table>
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Correo</th>
-                <th>Dirección</th>
-                <th>Rol</th>
-                <th>Alta</th>
-                <th class="actions-col"><span class="sr-only">Acciones</span></th>
-              </tr>
-            </thead>
-            <tbody id="users-body"></tbody>
-          </table>
-          <p id="empty" class="empty" hidden></p>
-        </div>
-      </section>
+        <section id="users-view">
+          <div class="toolbar">
+            <div class="segmented" role="tablist" aria-label="Filtrar por rol">
+              <button type="button" role="tab" data-filter="all" aria-selected="true">Todos <span data-count="all"></span></button>
+              <button type="button" role="tab" data-filter="passenger" aria-selected="false">Pasajeros <span data-count="passenger"></span></button>
+              <button type="button" role="tab" data-filter="driver" aria-selected="false">Choferes <span data-count="driver"></span></button>
+            </div>
+            <select id="company-filter" aria-label="Filtrar por empresa"></select>
+            <input id="search" type="search" placeholder="Buscar por nombre, correo, dirección o empresa" aria-label="Buscar" />
+            <button id="new-user" class="primary" type="button">+ Nuevo usuario</button>
+          </div>
+
+          <div class="card table-card">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Correo</th>
+                  <th>Dirección</th>
+                  <th>Rol</th>
+                  <th>Empresas</th>
+                  <th>Alta</th>
+                  <th class="actions-col"><span class="sr-only">Acciones</span></th>
+                </tr>
+              </thead>
+              <tbody id="users-body"></tbody>
+            </table>
+            <p id="empty" class="empty" hidden></p>
+          </div>
+        </section>
+
+        <section id="companies-view" hidden>
+          <div class="toolbar">
+            <p class="muted toolbar-text">Cada empresa tiene sus propias rutas. Los usuarios solo ven las rutas de las empresas a las que pertenecen.</p>
+            <button id="new-company" class="primary" type="button">+ Nueva empresa</button>
+          </div>
+
+          <div class="card table-card">
+            <table>
+              <thead>
+                <tr>
+                  <th>Empresa</th>
+                  <th>Rutas (en orden de rotación)</th>
+                  <th>Usuarios</th>
+                  <th class="actions-col"><span class="sr-only">Acciones</span></th>
+                </tr>
+              </thead>
+              <tbody id="companies-body"></tbody>
+            </table>
+            <p id="companies-empty" class="empty" hidden>Todavía no hay empresas. Crea la primera con "+ Nueva empresa".</p>
+          </div>
+        </section>
+      </div>
     </main>
 
-    <!-- Create / edit -->
+    <!-- Create / edit user -->
     <dialog id="user-dialog" aria-labelledby="user-dialog-title">
       <form id="user-form" method="dialog" novalidate>
         <h2 id="user-dialog-title">Nuevo usuario</h2>
@@ -80,6 +111,12 @@
           <option value="passenger">Pasajero</option>
           <option value="driver">Chofer</option>
         </select>
+
+        <fieldset class="choices">
+          <legend id="companies-legend">Empresa</legend>
+          <div id="f-companies" class="choice-list"></div>
+          <p id="companies-hint" class="muted small"></p>
+        </fieldset>
 
         <label for="f-address">Dirección de recogida <span id="address-optional" class="muted">(opcional para choferes)</span></label>
         <input id="f-address" name="address" autocomplete="off" maxlength="300" />
@@ -100,11 +137,36 @@
       </form>
     </dialog>
 
-    <!-- Delete confirmation -->
+    <!-- Create / edit company -->
+    <dialog id="company-dialog" class="wide" aria-labelledby="company-dialog-title">
+      <form id="company-form" method="dialog" novalidate>
+        <h2 id="company-dialog-title">Nueva empresa</h2>
+        <label for="c-name">Nombre</label>
+        <input id="c-name" name="name" autocomplete="off" required maxlength="60" />
+
+        <fieldset class="choices">
+          <legend>Rutas</legend>
+          <p class="muted small">
+            Se recorren en este orden, una por cada vez que el chofer inicia. Las de recogida muestran el mapa con la
+            ubicación del chofer; las de regreso no.
+          </p>
+          <ol id="c-routes" class="route-list"></ol>
+          <button id="add-route" type="button" class="ghost">+ Agregar ruta</button>
+        </fieldset>
+
+        <p id="company-error" class="error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button type="button" class="ghost" data-close>Cancelar</button>
+          <button id="save-company" type="submit" class="primary">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Delete confirmation (users and companies) -->
     <dialog id="confirm-dialog" aria-labelledby="confirm-title">
       <h2 id="confirm-title">¿Eliminar usuario?</h2>
       <p id="confirm-text"></p>
-      <p class="muted small">Se borra su cuenta y su historial de viajes. No se puede deshacer.</p>
+      <p id="confirm-note" class="muted small"></p>
       <p id="confirm-error" class="error" role="alert" hidden></p>
       <div class="dialog-actions">
         <button type="button" class="ghost" data-close>Cancelar</button>

@@ -1,12 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildApp } from '../src/http/app.ts';
-import { InMemoryTripRepository } from '../src/infrastructure/memory/in-memory-trip-repository.ts';
-import { InMemoryUserRepository } from '../src/infrastructure/memory/in-memory-user-repository.ts';
-import { WsHub } from '../src/infrastructure/realtime/ws-hub.ts';
-import { TripService } from '../src/trips/trip-service.ts';
-import { AuthService } from '../src/users/auth-service.ts';
-import { hashPassword } from '../src/users/password.ts';
-import { RecordingNotifier } from './support.ts';
+import type { buildApp } from '../src/http/app.ts';
+import { LocationRelay } from '../src/location/location-relay.ts';
+import type { TripService } from '../src/trips/trip-service.ts';
+import { appWorld } from './support.ts';
 
 type Socket = Awaited<ReturnType<Awaited<ReturnType<typeof buildApp>>['injectWS']>>;
 
@@ -16,22 +12,21 @@ afterEach(async () => {
 });
 
 async function setup() {
-  const users = new InMemoryUserRepository();
-  const hub = new WsHub();
-  const tripService = new TripService({ trips: new InMemoryTripRepository(users), users, events: hub, notifier: new RecordingNotifier() });
-  const app = await buildApp({ users, hub, tripService, authService: new AuthService(users), jwtSecret: 'test-secret' });
+  const base = await appWorld();
+  const { app, users, eureka, acme } = base;
   apps.push(app);
-  await app.ready();
-  const passwordHash = await hashPassword('secret123');
-  await users.create({ email: 'driver@test.dev', passwordHash, name: 'Driver', address: '', role: 'driver' });
-  await users.create({ email: 'ana@test.dev', passwordHash, name: 'Ana', address: 'Calle 1', role: 'passenger' });
-  await users.create({ email: 'beto@test.dev', passwordHash, name: 'Beto', address: 'Calle 2', role: 'passenger' });
+  // A second driver for each company, to check that positions never cross between trips.
+  const passwordHash = (await users.findByEmail('driver@test.dev'))!.passwordHash;
+  const second = { passwordHash, address: '', role: 'driver' as const };
+  await users.create({ ...second, email: 'rival@test.dev', name: 'Rival', companyIds: [acme.id] });
+  await users.create({ ...second, email: 'backup@test.dev', name: 'Backup', companyIds: [eureka.id] });
 
   async function login(email: string): Promise<string> {
     return (await app.inject({ method: 'POST', url: '/auth/login', payload: { email, password: 'secret123' } })).json().token;
   }
-  async function post(url: string, token: string) {
-    return app.inject({ method: 'POST', url, headers: { authorization: `Bearer ${token}` } });
+  /** Trip calls go to Eureka unless another company is named. */
+  async function post(url: string, token: string, companyId: string = eureka.id) {
+    return app.inject({ method: 'POST', url: `${url}?companyId=${companyId}`, headers: { authorization: `Bearer ${token}` } });
   }
   /** Opens /ws/location, authenticates, and collects every message received. */
   async function connect(token: string) {
@@ -44,7 +39,7 @@ async function setup() {
     await settle();
     return { socket, messages, closed: () => closeCode };
   }
-  return { app, login, post, connect };
+  return { app, login, post, connect, acme };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
@@ -72,8 +67,9 @@ describe('driver location relay', () => {
     await settle();
 
     expect(anaWs.messages).toEqual([
-      { type: 'driver-position', lat: 10.5, lng: -66.9, heading: 90, at: expect.any(String) },
+      { type: 'driver-position', lat: 10.5, lng: -66.9, heading: 90, at: expect.any(String), ageMs: expect.any(Number) },
     ]);
+    expect(anaWs.messages[0].ageMs).toBeLessThan(1_000);
     anaWs.socket.terminate();
     driverWs.socket.terminate();
   });
@@ -106,9 +102,12 @@ describe('driver location relay', () => {
     send(driverWs.socket, position(10.5, -66.9));
     await settle();
 
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const anaWs = await connect(ana);
 
     expect(anaWs.messages).toEqual([expect.objectContaining({ type: 'driver-position', lat: 10.5, lng: -66.9 })]);
+    // A late joiner is told how old the position is, so their phone does not have to trust its own clock.
+    expect(anaWs.messages[0].ageMs).toBeGreaterThanOrEqual(300);
     anaWs.socket.terminate();
     driverWs.socket.terminate();
   });
@@ -190,7 +189,7 @@ describe('driver location relay', () => {
 
     expect(response.statusCode).toBe(204);
     expect(anaWs.messages).toEqual([
-      { type: 'driver-position', lat: 10.5, lng: -66.9, heading: null, at: expect.any(String) },
+      { type: 'driver-position', lat: 10.5, lng: -66.9, heading: null, at: expect.any(String), ageMs: expect.any(Number) },
     ]);
     anaWs.socket.terminate();
   });
@@ -221,6 +220,101 @@ describe('driver location relay', () => {
 
     expect(anaWs.messages).toEqual([]);
     anaWs.socket.terminate();
+  });
+
+  it('only shares a driver position with the trip that driver started, never with another company', async () => {
+    const { app, login, post, connect, acme } = await setup();
+    const driver = await login('driver@test.dev');
+    const rival = await login('rival@test.dev');
+    const ana = await login('ana@test.dev');
+    const carla = await login('carla@test.dev');
+    await post('/trips', driver);
+    await post('/trips/current/passengers', ana);
+    await post('/trips', rival, acme.id);
+    await post('/trips/current/passengers', carla, acme.id);
+    const anaWs = await connect(ana);
+    const carlaWs = await connect(carla);
+
+    // The driver also works for Acme, but Acme's running trip is the rival's.
+    expect((await report(app, driver, { lat: 1, lng: 1 })).statusCode).toBe(204);
+    await settle();
+    expect(anaWs.messages).toEqual([expect.objectContaining({ lat: 1, lng: 1 })]);
+    expect(carlaWs.messages).toEqual([]);
+
+    expect((await report(app, rival, { lat: 2, lng: 2 })).statusCode).toBe(204);
+    await settle();
+    expect(carlaWs.messages).toEqual([expect.objectContaining({ lat: 2, lng: 2 })]);
+    expect(anaWs.messages).toHaveLength(1);
+
+    // A late joiner only gets the last position of their own trip.
+    const lateCarla = await connect(carla);
+    expect(lateCarla.messages).toEqual([expect.objectContaining({ lat: 2, lng: 2 })]);
+    for (const ws of [anaWs, carlaWs, lateCarla]) ws.socket.terminate();
+  });
+
+  it('does not share the position of a driver who is not running the trip', async () => {
+    const { app, login, post, connect } = await setup();
+    const driver = await login('driver@test.dev');
+    const backup = await login('backup@test.dev');
+    const ana = await login('ana@test.dev');
+    await post('/trips', driver);
+    await post('/trips/current/passengers', ana);
+    const anaWs = await connect(ana);
+
+    const response = await report(app, backup, { lat: 9, lng: 9 });
+    await settle();
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe('NO_ACTIVE_TRIP');
+    expect(anaWs.messages).toEqual([]);
+    anaWs.socket.terminate();
+  });
+
+  it('keeps relaying an unchanged position, so a parked driver still counts as connected', async () => {
+    const { app, login, post, connect } = await setup();
+    const driver = await login('driver@test.dev');
+    const ana = await login('ana@test.dev');
+    await post('/trips', driver);
+    await post('/trips/current/passengers', ana);
+    const anaWs = await connect(ana);
+
+    await report(app, driver, { lat: 10.5, lng: -66.9 });
+    await new Promise((resolve) => setTimeout(resolve, 600)); // past the flood throttle
+    await report(app, driver, { lat: 10.5, lng: -66.9 });
+    await settle();
+
+    expect(anaWs.messages).toHaveLength(2);
+    expect(new Date(anaWs.messages[1].at).getTime()).toBeGreaterThan(new Date(anaWs.messages[0].at).getTime());
+    anaWs.socket.terminate();
+  });
+
+  it('drops location sockets that stop answering pings and keeps the live ones', async () => {
+    const relay = new LocationRelay({ activeTrips: async () => [] } as unknown as TripService);
+    const socket = (alive: boolean) => {
+      const listeners: Record<string, () => void> = {};
+      return {
+        on: (event: string, listener: () => void) => void (listeners[event] = listener),
+        // A live phone answers every ping with a pong; a dead one never does.
+        ping: () => (alive ? listeners.pong?.() : undefined),
+        terminated: false,
+        terminate() {
+          this.terminated = true;
+        },
+        close: () => {},
+      };
+    };
+    const live = socket(true);
+    const dead = socket(false);
+    const passenger = { id: 'p', email: '', name: '', address: '', role: 'passenger' as const, companies: [] };
+    await relay.add(live as never, passenger);
+    await relay.add(dead as never, passenger);
+
+    relay.startHeartbeat(20);
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    relay.close();
+
+    expect(dead.terminated).toBe(true);
+    expect(live.terminated).toBe(false);
   });
 
   it('closes the socket when authentication fails', async () => {

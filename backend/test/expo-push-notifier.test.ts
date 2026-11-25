@@ -11,27 +11,27 @@ function recordingFetch(status = 200) {
 }
 
 describe('ExpoPushNotifier', () => {
-  it('sends one message per token with the route label', async () => {
+  it('sends one message per token with the route name', async () => {
     const { requests, fetchFn } = recordingFetch();
-    await new ExpoPushNotifier({ fetch: fetchFn }).tripStarted('manana', ['ExponentPushToken[a]']);
+    await new ExpoPushNotifier({ fetch: fetchFn }).tripStarted('Mañana', ['ExponentPushToken[a]']);
 
     expect(requests).toHaveLength(1);
     expect(requests[0]!.url).toBe('https://exp.host/--/api/v2/push/send');
     expect(JSON.parse(requests[0]!.init.body as string)).toEqual([
-      expect.objectContaining({ to: 'ExponentPushToken[a]', title: 'Ruta Mañana iniciada', data: { type: 'trip.started', route: 'manana' } }),
+      expect.objectContaining({ to: 'ExponentPushToken[a]', title: 'Ruta Mañana iniciada', data: { type: 'trip.started', route: 'Mañana' } }),
     ]);
   });
 
   it('batches in chunks of 100 tokens', async () => {
     const { requests, fetchFn } = recordingFetch();
     const tokens = Array.from({ length: 150 }, (_, i) => `ExponentPushToken[${i}]`);
-    await new ExpoPushNotifier({ fetch: fetchFn }).tripStarted('sur', tokens);
+    await new ExpoPushNotifier({ fetch: fetchFn }).tripStarted('Sur', tokens);
 
     expect(requests.map((request) => JSON.parse(request.init.body as string).length)).toEqual([100, 50]);
   });
 
   it('throws when Expo answers with an error status', async () => {
     const { fetchFn } = recordingFetch(503);
-    await expect(new ExpoPushNotifier({ fetch: fetchFn }).tripStarted('sur', ['t'])).rejects.toThrow('HTTP 503');
+    await expect(new ExpoPushNotifier({ fetch: fetchFn }).tripStarted('Sur', ['t'])).rejects.toThrow('HTTP 503');
   });
 });

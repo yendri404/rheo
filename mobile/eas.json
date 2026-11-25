@@ -20,6 +20,13 @@
         "buildType": "apk"
       }
     },
+    "preview-debug": {
+      "extends": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api-production-87da5661.up.railway.app",
+        "EXPO_PUBLIC_DEBUG_API": "true"
+      }
+    },
     "production": {
       "autoIncrement": true
     }

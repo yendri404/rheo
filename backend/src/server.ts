@@ -2,6 +2,7 @@ import { loadConfig } from './config.ts';
 import { buildApp } from './http/app.ts';
 import { ExpoPushNotifier } from './infrastructure/expo/expo-push-notifier.ts';
 import { connect, migrate } from './infrastructure/postgres/database.ts';
+import { PostgresCompanyRepository } from './infrastructure/postgres/postgres-company-repository.ts';
 import { PostgresTripRepository } from './infrastructure/postgres/postgres-trip-repository.ts';
 import { PostgresUserRepository } from './infrastructure/postgres/postgres-user-repository.ts';
 import { WsHub } from './infrastructure/realtime/ws-hub.ts';
@@ -13,11 +14,13 @@ const sql = connect(config.DATABASE_URL);
 await migrate(sql);
 
 const users = new PostgresUserRepository(sql);
+const companies = new PostgresCompanyRepository(sql);
 const hub = new WsHub();
 hub.startHeartbeat();
 
 const app = await buildApp({
   users,
+  companies,
   hub,
   authService: new AuthService(users),
   jwtSecret: config.JWT_SECRET,
@@ -27,6 +30,7 @@ const app = await buildApp({
   tripService: new TripService({
     trips: new PostgresTripRepository(sql),
     users,
+    companies,
     events: hub,
     notifier: new ExpoPushNotifier({ accessToken: config.EXPO_ACCESS_TOKEN }),
     onBackgroundError: (error) => app.log.error({ err: error }, 'Push notification failed'),

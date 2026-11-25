@@ -53,10 +53,12 @@
       [
         "expo-notifications",
         {
+          "icon": "./assets/notification-icon.png",
           "color": "#2D8665"
         }
       ],
-      "@maplibre/maplibre-react-native"
+      "@maplibre/maplibre-react-native",
+      "expo-build-properties"
     ],
     "scheme": "proyectocarreras",
     "extra": {

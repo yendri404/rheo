@@ -1,9 +1,6 @@
 import type { PositionReport } from '../location/position-report';
+import { apiUrl } from './api-url';
 import type { TripStateView, User } from './types';
-
-/** Set EXPO_PUBLIC_API_URL to your machine's LAN IP when testing on a physical phone. */
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-export const WS_URL = `${API_URL.replace(/^http/, 'ws')}/ws`;
 
 export class ApiError extends Error {
   readonly status: number;
@@ -23,7 +20,11 @@ const MESSAGES_BY_CODE: Record<string, string> = {
   TRIP_ALREADY_ACTIVE: 'Ya hay una ruta en curso.',
   PENDING_STOPS: 'Faltan paradas por confirmar.',
   STOP_ALREADY_CONFIRMED: 'El chofer ya confirmó tu parada.',
-  NETWORK: 'No se pudo conectar con el servidor.',
+  NO_ROUTES: 'Esta empresa todavía no tiene rutas.',
+  NO_COMPANY: 'Tu cuenta todavía no está asignada a una empresa.',
+  COMPANY_REQUIRED: 'Elige una empresa.',
+  FORBIDDEN: 'No tienes acceso a esta empresa.',
+  NETWORK: 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.',
 };
 
 export function errorMessage(error: unknown): string {
@@ -31,12 +32,29 @@ export function errorMessage(error: unknown): string {
   return MESSAGES_BY_CODE.NETWORK!;
 }
 
+/**
+ * React Native never gives up on a server that does not answer (an unreachable address simply
+ * hangs), which would leave buttons spinning until the app is closed. Fail instead, so the user can retry.
+ */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/** `fetch` that rejects when the server takes longer than `timeoutMs` to answer. */
+export async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 type RequestOptions = { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; token?: string; body?: unknown };
 
 async function request<T>(path: string, { method = 'GET', token, body }: RequestOptions = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, {
+    response = await fetchWithTimeout(`${apiUrl()}${path}`, {
       method,
       headers: {
         accept: 'application/json',
@@ -62,19 +80,23 @@ export function login(email: string, password: string) {
   return request<AuthResult>('/auth/login', { method: 'POST', body: { email, password } });
 }
 
-/** Endpoints that need a session. */
+/** A driver registered in several companies names the one they work with; everyone else omits it. */
+const inCompany = (companyId?: string) => (companyId ? `?companyId=${encodeURIComponent(companyId)}` : '');
+
+/** Endpoints that need a session. Trip calls take the company the driver selected. */
 export function authenticatedApi(token: string) {
   return {
     me: () => request<User>('/me', { token }),
     setPushToken: (pushToken: string | null) =>
       request<void>('/me/push-token', { method: 'PUT', token, body: { token: pushToken } }),
-    currentTrip: () => request<TripStateView>('/trips/current', { token }),
-    startTrip: () => request<TripStateView>('/trips', { method: 'POST', token }),
+    currentTrip: (companyId?: string) => request<TripStateView>(`/trips/current${inCompany(companyId)}`, { token }),
+    startTrip: (companyId?: string) => request<TripStateView>(`/trips${inCompany(companyId)}`, { method: 'POST', token }),
     joinTrip: () => request<TripStateView>('/trips/current/passengers', { method: 'POST', token }),
     leaveTrip: () => request<TripStateView>('/trips/current/passengers', { method: 'DELETE', token }),
-    confirmStop: (userId: string) =>
-      request<TripStateView>(`/trips/current/passengers/${userId}/confirm`, { method: 'POST', token }),
-    finishTrip: () => request<TripStateView>('/trips/current/finish', { method: 'POST', token }),
+    confirmStop: (userId: string, companyId?: string) =>
+      request<TripStateView>(`/trips/current/passengers/${userId}/confirm${inCompany(companyId)}`, { method: 'POST', token }),
+    finishTrip: (companyId?: string) =>
+      request<TripStateView>(`/trips/current/finish${inCompany(companyId)}`, { method: 'POST', token }),
     /** Driver only. Fails with 409 NO_ACTIVE_TRIP once the trip is over. */
     reportLocation: (position: PositionReport) => request<void>('/location', { method: 'POST', token, body: position }),
   };

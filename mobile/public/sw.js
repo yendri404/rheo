@@ -4,10 +4,10 @@
 // - Hashed build assets under /_expo/static/ are immutable, so they are served cache-first.
 // - Other same-origin files (icons, manifest, map worker) are network-first with a cache fallback.
 // Bump CACHE_VERSION to drop every old cache on the next activation.
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `rheo-${CACHE_VERSION}`;
 const APP_SHELL = '/';
-const PRECACHE = [APP_SHELL, '/manifest.json', '/icon-192.png', '/icon-512.png'];
+const PRECACHE = [APP_SHELL, '/manifest.json', '/icon-192.png', '/icon-512.png', '/badge-96.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

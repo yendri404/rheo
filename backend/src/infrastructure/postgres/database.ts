@@ -2,6 +2,10 @@ import { readFile } from 'node:fs/promises';
 import postgres from 'postgres';
 
 export type Sql = postgres.Sql;
+/** A connection pool or an open transaction: anything a query can run on. */
+export type Queryable = postgres.ISql;
+/** A piece of SQL to interpolate into a larger query. */
+export type Fragment = postgres.PendingQuery<postgres.Row[]>;
 
 export function connect(url: string): Sql {
   return postgres(url, { max: 10, onnotice: () => {} });

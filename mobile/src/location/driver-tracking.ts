@@ -1,9 +1,11 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import { Platform } from 'react-native';
+import { loadApiUrl } from '../api/api-url';
 import { ApiError, authenticatedApi } from '../api/client';
 import { readStoredToken } from '../session/stored-session';
 import { colors } from '../ui/theme';
-import { shouldStopTracking, toPositionReport } from './position-report';
+import { GPS_INTERVAL_MS, shouldReport, shouldStopTracking, toPositionReport, type SentReport } from './position-report';
 
 /**
  * The driver's live GPS (native). Runs only while a trip is open and keeps running with the phone
@@ -11,17 +13,26 @@ import { shouldStopTracking, toPositionReport } from './position-report';
  * Positions go over HTTP because the OS suspends WebSockets in the background. The web build uses
  * driver-tracking.web.ts.
  *
- * Battery and data: the phone only reports after moving DISTANCE_METERS and at most every
- * INTERVAL_MS (enforced in sendPosition, since iOS ignores timeInterval), so a parked driver sends nothing; and it stops itself as soon as the server says the
- * trip is over (409), even if the app was killed before the driver finished the trip.
+ * Battery and data: the OS delivers a fix every GPS_INTERVAL_MS, moving or not, and `shouldReport`
+ * sends it about every 5 s while moving and every 10 s while parked. The parked heartbeat matters:
+ * with no reports at all, passengers saw "location outdated" at every long traffic light. Tracking
+ * stops itself as soon as the server says the trip is over (409), even if the app was killed
+ * before the driver finished the trip.
  */
 
 /** `background`: shared even with the phone locked. `foreground`: only while the app is open. */
 export type TrackingMode = 'background' | 'foreground' | 'denied';
 
 const TASK_NAME = 'driver-location';
-const INTERVAL_MS = 5_000;
-const DISTANCE_METERS = 20;
+/**
+ * No distance filter: a filter makes the OS stay silent while the vehicle is stopped. iOS has no
+ * time interval (it reports continuously without a filter), so there the pacing is all in `shouldReport`.
+ */
+const GPS_OPTIONS = {
+  accuracy: Location.Accuracy.High, // Balanced can be ~100 m off: too coarse for the 200 m alert.
+  timeInterval: GPS_INTERVAL_MS,
+  ...(Platform.OS === 'android' ? { distanceInterval: 0 } : {}),
+} as const;
 
 type TaskData = { locations: Location.LocationObject[] };
 
@@ -36,8 +47,8 @@ TaskManager.defineTask<TaskData>(TASK_NAME, async ({ data, error }) => {
 let foregroundWatch: Location.LocationSubscription | null = null;
 // Start and stop are async; chaining them keeps a quick start/stop/start in order.
 let queue: Promise<unknown> = Promise.resolve();
-// iOS ignores `timeInterval` (Android-only), so the interval is also enforced here.
-let lastSentAt = 0;
+// The last position sent, which decides whether the next GPS fix is worth sending.
+let lastSent: SentReport | null = null;
 // Bumped on every start: a 409 for a report sent during the previous trip must not stop the new one.
 let generation = 0;
 
@@ -49,8 +60,9 @@ function serial<T>(step: () => Promise<T>): Promise<T> {
 
 async function sendPosition(coords: Location.LocationObjectCoords): Promise<void> {
   const now = Date.now();
-  if (now - lastSentAt < INTERVAL_MS) return;
-  lastSentAt = now;
+  const next = { lat: coords.latitude, lng: coords.longitude };
+  if (!shouldReport(lastSent, next, now)) return;
+  lastSent = { ...next, at: now };
   const sentDuring = generation;
   const stopIfStillCurrent = () => (generation === sentDuring ? stopDriverTracking() : undefined);
 
@@ -60,15 +72,20 @@ async function sendPosition(coords: Location.LocationObjectCoords): Promise<void
     return;
   }
   try {
+    // The OS can run this task without the app on screen, so nothing else has applied a test API address yet.
+    await loadApiUrl();
     await authenticatedApi(token).reportLocation(toPositionReport(coords));
   } catch (error) {
     if (error instanceof ApiError && shouldStopTracking(error.status)) await stopIfStillCurrent();
+    // A report that did not get through (no signal, timeout) is retried with the next fix instead of waiting for the heartbeat.
+    else lastSent = null;
   }
 }
 
 export function startDriverTracking(): Promise<TrackingMode> {
   return serial(async () => {
     generation += 1;
+    lastSent = null; // A new trip reports its first fix immediately.
     const foreground = await Location.requestForegroundPermissionsAsync();
     if (!foreground.granted) return 'denied';
 
@@ -76,9 +93,7 @@ export function startDriverTracking(): Promise<TrackingMode> {
     if (background.granted) {
       if (!(await Location.hasStartedLocationUpdatesAsync(TASK_NAME))) {
         await Location.startLocationUpdatesAsync(TASK_NAME, {
-          accuracy: Location.Accuracy.High, // Balanced can be ~100 m off: too coarse for the 200 m alert.
-          timeInterval: INTERVAL_MS,
-          distanceInterval: DISTANCE_METERS,
+          ...GPS_OPTIONS,
           activityType: Location.ActivityType.AutomotiveNavigation,
           // iOS auto-pause may never resume after a long stop in traffic.
           pausesUpdatesAutomatically: false,
@@ -95,10 +110,7 @@ export function startDriverTracking(): Promise<TrackingMode> {
 
     // "Always" was refused: still share while the app is open.
     if (!foregroundWatch) {
-      foregroundWatch = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: INTERVAL_MS, distanceInterval: DISTANCE_METERS },
-        ({ coords }) => void sendPosition(coords),
-      );
+      foregroundWatch = await Location.watchPositionAsync(GPS_OPTIONS, ({ coords }) => void sendPosition(coords));
     }
     return 'foreground';
   });

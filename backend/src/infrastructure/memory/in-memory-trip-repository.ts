@@ -1,12 +1,21 @@
 import { randomUUID } from 'node:crypto';
+import type { RouteKind } from '../../companies/company.ts';
 import { AppError } from '../../shared/app-error.ts';
-import type { TripRepository } from '../../trips/ports.ts';
-import type { RouteName } from '../../trips/route.ts';
+import type { NewTrip, TripRepository } from '../../trips/ports.ts';
 import type { ActiveTrip } from '../../trips/trip.ts';
 import type { UserRepository } from '../../users/user.ts';
 
 type StoredPassenger = { userId: string; joinedAt: Date; confirmedAt: Date | null };
-type StoredTrip = { id: string; route: RouteName; startedAt: Date; finishedAt: Date | null; passengers: StoredPassenger[] };
+type StoredTrip = {
+  id: string;
+  companyId: string;
+  driverId: string;
+  routeId: string;
+  route: { name: string; kind: RouteKind };
+  startedAt: Date;
+  finishedAt: Date | null;
+  passengers: StoredPassenger[];
+};
 
 /** Test and local-dev adapter. Single-threaded JS keeps every method atomic. */
 export class InMemoryTripRepository implements TripRepository {
@@ -17,25 +26,33 @@ export class InMemoryTripRepository implements TripRepository {
     this.#users = users;
   }
 
-  async findActive(): Promise<ActiveTrip | null> {
-    const trip = this.#active();
-    if (!trip) return null;
-    const passengers = await Promise.all(
-      trip.passengers.map(async (passenger) => {
-        const user = await this.#users.findById(passenger.userId);
-        return { ...passenger, name: user?.name ?? '', address: user?.address ?? '' };
-      }),
-    );
-    return { id: trip.id, route: trip.route, startedAt: trip.startedAt, passengers };
+  async findActive(companyId: string): Promise<ActiveTrip | null> {
+    const trip = this.#trips.find((candidate) => candidate.companyId === companyId && candidate.finishedAt === null);
+    return trip ? this.#toActive(trip) : null;
   }
 
-  async lastRoute(): Promise<RouteName | null> {
-    return this.#trips.at(-1)?.route ?? null;
+  async listActive(): Promise<ActiveTrip[]> {
+    return Promise.all(this.#trips.filter((trip) => trip.finishedAt === null).map((trip) => this.#toActive(trip)));
   }
 
-  async start(route: RouteName, at: Date): Promise<void> {
-    if (this.#active()) throw new AppError('TRIP_ALREADY_ACTIVE', 'A trip is already active.');
-    this.#trips.push({ id: randomUUID(), route, startedAt: at, finishedAt: null, passengers: [] });
+  async lastRouteId(companyId: string): Promise<string | null> {
+    return this.#trips.findLast((trip) => trip.companyId === companyId)?.routeId ?? null;
+  }
+
+  async start({ companyId, route, driverId, at }: NewTrip): Promise<void> {
+    if (this.#trips.some((trip) => trip.companyId === companyId && trip.finishedAt === null)) {
+      throw new AppError('TRIP_ALREADY_ACTIVE', 'A trip is already active.');
+    }
+    this.#trips.push({
+      id: randomUUID(),
+      companyId,
+      driverId,
+      routeId: route.id,
+      route: { name: route.name, kind: route.kind },
+      startedAt: at,
+      finishedAt: null,
+      passengers: [],
+    });
   }
 
   async addPassenger(tripId: string, userId: string, at: Date): Promise<'added' | 'trip_not_active'> {
@@ -75,12 +92,24 @@ export class InMemoryTripRepository implements TripRepository {
     return 'finished';
   }
 
-  #active(): StoredTrip | undefined {
-    return this.#trips.find((trip) => trip.finishedAt === null);
+  #activeById(tripId: string): StoredTrip | undefined {
+    return this.#trips.find((trip) => trip.id === tripId && trip.finishedAt === null);
   }
 
-  #activeById(tripId: string): StoredTrip | undefined {
-    const trip = this.#active();
-    return trip?.id === tripId ? trip : undefined;
+  async #toActive(trip: StoredTrip): Promise<ActiveTrip> {
+    const passengers = await Promise.all(
+      trip.passengers.map(async (passenger) => {
+        const user = await this.#users.findById(passenger.userId);
+        return { ...passenger, name: user?.name ?? '', address: user?.address ?? '' };
+      }),
+    );
+    return {
+      id: trip.id,
+      companyId: trip.companyId,
+      driverId: trip.driverId,
+      route: { ...trip.route },
+      startedAt: trip.startedAt,
+      passengers,
+    };
   }
 }

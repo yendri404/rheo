@@ -6,6 +6,8 @@ import { z, ZodError } from 'zod';
 import type { WsHub } from '../infrastructure/realtime/ws-hub.ts';
 import { registerAdminRoutes } from '../admin/admin-routes.ts';
 import { AdminService } from '../admin/admin-service.ts';
+import { resolveCompany } from '../companies/access.ts';
+import type { CompanyRepository } from '../companies/company.ts';
 import { registerLocationRoutes } from '../location/location-relay.ts';
 import { AppError, type ErrorCode } from '../shared/app-error.ts';
 import type { TripService } from '../trips/trip-service.ts';
@@ -22,6 +24,7 @@ declare module '@fastify/jwt' {
 
 export type AppDependencies = {
   users: UserRepository;
+  companies: CompanyRepository;
   hub: WsHub;
   tripService: TripService;
   authService: AuthService;
@@ -48,16 +51,27 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   USER_NOT_FOUND: 404,
   USER_IN_ACTIVE_TRIP: 409,
   TOO_MANY_ATTEMPTS: 429,
+  NO_ROUTES: 409,
+  NO_COMPANY: 409,
+  COMPANY_REQUIRED: 400,
+  COMPANY_NOT_FOUND: 404,
+  COMPANY_NAME_TAKEN: 409,
+  COMPANY_HAS_MEMBERS: 409,
+  COMPANY_IN_ACTIVE_TRIP: 409,
 };
 
 const WS_AUTH_TIMEOUT_MS = 5_000;
 const WS_UNAUTHORIZED = 4401;
+/** The session is fine but the requested company is not available to this user. */
+const WS_FORBIDDEN = 4403;
 
 const emailField = z.string().trim().toLowerCase().pipe(z.email().max(254));
 const loginBody = z.object({ email: emailField, password: z.string().min(1).max(200) });
 const pushTokenBody = z.object({ token: z.string().min(1).max(300).nullable() });
 const passengerParams = z.object({ userId: z.uuid() });
-const wsAuthMessage = z.object({ type: z.literal('auth'), token: z.string() });
+/** Drivers registered in several companies say which one they are working with. */
+const companyQuery = z.object({ companyId: z.uuid().optional() });
+const wsAuthMessage = z.object({ type: z.literal('auth'), token: z.string(), companyId: z.uuid().optional() });
 
 export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> {
   const { users, hub, tripService, authService } = deps;
@@ -103,6 +117,12 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     return userFromToken(header.slice('Bearer '.length));
   }
 
+  /** The user and the company the request is about (`?companyId=`, optional with a single company). */
+  async function currentAccess(request: FastifyRequest): Promise<{ user: User; companyId: string }> {
+    const user = await currentUser(request);
+    return { user, companyId: resolveCompany(user, companyQuery.parse(request.query).companyId) };
+  }
+
   app.get('/health', async () => ({ ok: true }));
 
   app.post('/auth/login', async (request) => {
@@ -123,34 +143,34 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   });
 
   app.get('/trips/current', async (request) => {
-    const user = await currentUser(request);
-    return viewFor(await tripService.state(), user);
+    const { user, companyId } = await currentAccess(request);
+    return viewFor(await tripService.state(companyId), user);
   });
 
   app.post('/trips', async (request, reply) => {
-    const user = await currentUser(request);
-    return reply.status(201).send(viewFor(await tripService.start(user), user));
+    const { user, companyId } = await currentAccess(request);
+    return reply.status(201).send(viewFor(await tripService.start(user, companyId), user));
   });
 
   app.post('/trips/current/passengers', async (request) => {
-    const user = await currentUser(request);
-    return viewFor(await tripService.join(user), user);
+    const { user, companyId } = await currentAccess(request);
+    return viewFor(await tripService.join(user, companyId), user);
   });
 
   app.delete('/trips/current/passengers', async (request) => {
-    const user = await currentUser(request);
-    return viewFor(await tripService.leave(user), user);
+    const { user, companyId } = await currentAccess(request);
+    return viewFor(await tripService.leave(user, companyId), user);
   });
 
   app.post('/trips/current/passengers/:userId/confirm', async (request) => {
-    const user = await currentUser(request);
+    const { user, companyId } = await currentAccess(request);
     const { userId } = passengerParams.parse(request.params);
-    return viewFor(await tripService.confirmStop(user, userId), user);
+    return viewFor(await tripService.confirmStop(user, companyId, userId), user);
   });
 
   app.post('/trips/current/finish', async (request) => {
-    const user = await currentUser(request);
-    return viewFor(await tripService.finish(user), user);
+    const { user, companyId } = await currentAccess(request);
+    return viewFor(await tripService.finish(user, companyId), user);
   });
 
   // The token travels in the first message, not the URL, so it never lands in access logs.
@@ -159,9 +179,17 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
     socket.once('message', async (raw) => {
       clearTimeout(timeout);
       try {
-        const { token } = wsAuthMessage.parse(JSON.parse(raw.toString()));
+        const { token, companyId: requested } = wsAuthMessage.parse(JSON.parse(raw.toString()));
         const user = await userFromToken(token);
-        hub.add(socket, user, await tripService.state());
+        let companyId: string;
+        try {
+          companyId = resolveCompany(user, requested);
+        } catch {
+          // Not a session problem: the client keeps its session and picks a company it belongs to.
+          socket.close(WS_FORBIDDEN, 'Company not available');
+          return;
+        }
+        hub.add(socket, user, await tripService.state(companyId));
       } catch {
         socket.close(WS_UNAUTHORIZED, 'Unauthorized');
       }
@@ -172,7 +200,16 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
   registerLocationRoutes(app, { authenticate: userFromToken, tripService });
 
   if (deps.adminPassword) {
-    registerAdminRoutes(app, { adminPassword: deps.adminPassword, adminService: new AdminService(users, tripService) });
+    registerAdminRoutes(app, {
+      adminPassword: deps.adminPassword,
+      adminService: new AdminService({
+        users,
+        companies: deps.companies,
+        tripService,
+        // A changed or deleted user reconnects, so they stop watching companies they no longer belong to.
+        onUserChanged: (userId) => hub.disconnectUser(userId),
+      }),
+    });
   }
 
   app.addHook('onClose', async () => hub.close());

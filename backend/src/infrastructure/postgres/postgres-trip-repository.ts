@@ -1,12 +1,15 @@
+import type { RouteKind } from '../../companies/company.ts';
 import { AppError } from '../../shared/app-error.ts';
-import type { TripRepository } from '../../trips/ports.ts';
-import type { RouteName } from '../../trips/route.ts';
+import type { NewTrip, TripRepository } from '../../trips/ports.ts';
 import type { ActiveTrip } from '../../trips/trip.ts';
 import { isUniqueViolation, type Sql } from './database.ts';
 
 type TripRow = {
   id: string;
-  route: RouteName;
+  company_id: string;
+  driver_id: string | null;
+  route_name: string;
+  route_kind: RouteKind;
   started_at: Date;
   user_id: string | null;
   name: string | null;
@@ -26,42 +29,27 @@ export class PostgresTripRepository implements TripRepository {
     this.#sql = sql;
   }
 
-  async findActive(): Promise<ActiveTrip | null> {
-    const rows = await this.#sql<TripRow[]>`
-      SELECT t.id, t.route, t.started_at, tp.user_id, u.name, u.address, tp.joined_at, tp.confirmed_at
-      FROM trips t
-      LEFT JOIN trip_passengers tp ON tp.trip_id = t.id
-      LEFT JOIN users u ON u.id = tp.user_id
-      WHERE t.status = 'active'
-      ORDER BY tp.joined_at, u.name`;
-    const first = rows[0];
-    if (!first) return null;
-    return {
-      id: first.id,
-      route: first.route,
-      startedAt: first.started_at,
-      passengers: rows
-        .filter((row) => row.user_id !== null)
-        .map((row) => ({
-          userId: row.user_id!,
-          name: row.name ?? '',
-          address: row.address ?? '',
-          joinedAt: row.joined_at!,
-          confirmedAt: row.confirmed_at,
-        })),
-    };
+  async findActive(companyId: string): Promise<ActiveTrip | null> {
+    return (await this.#active(companyId))[0] ?? null;
   }
 
-  async lastRoute(): Promise<RouteName | null> {
-    const [row] = await this.#sql<{ route: RouteName }[]>`SELECT route FROM trips ORDER BY seq DESC LIMIT 1`;
-    return row?.route ?? null;
+  listActive(): Promise<ActiveTrip[]> {
+    return this.#active(null);
   }
 
-  async start(route: RouteName, at: Date): Promise<void> {
+  async lastRouteId(companyId: string): Promise<string | null> {
+    const [row] = await this.#sql<{ route_id: string | null }[]>`
+      SELECT route_id FROM trips WHERE company_id = ${companyId} ORDER BY seq DESC LIMIT 1`;
+    return row?.route_id ?? null;
+  }
+
+  async start({ companyId, route, driverId, at }: NewTrip): Promise<void> {
     try {
-      await this.#sql`INSERT INTO trips (route, status, started_at) VALUES (${route}, 'active', ${at})`;
+      await this.#sql`
+        INSERT INTO trips (company_id, route_id, route_name, route_kind, driver_id, status, started_at)
+        VALUES (${companyId}, ${route.id}, ${route.name}, ${route.kind}, ${driverId}, 'active', ${at})`;
     } catch (error) {
-      if (isUniqueViolation(error, 'trips_one_active')) {
+      if (isUniqueViolation(error, 'trips_one_active_per_company')) {
         throw new AppError('TRIP_ALREADY_ACTIVE', 'A trip is already active.');
       }
       throw error;
@@ -117,5 +105,43 @@ export class PostgresTripRepository implements TripRepository {
       await tx`UPDATE trips SET status = 'finished', finished_at = ${at} WHERE id = ${tripId}`;
       return 'finished' as const;
     });
+  }
+
+  /** Running trips with their passengers: the one of a company, or all of them. */
+  async #active(companyId: string | null): Promise<ActiveTrip[]> {
+    const sql = this.#sql;
+    const rows = await sql<TripRow[]>`
+      SELECT t.id, t.company_id, t.driver_id, t.route_name, t.route_kind, t.started_at,
+        tp.user_id, u.name, u.address, tp.joined_at, tp.confirmed_at
+      FROM trips t
+      LEFT JOIN trip_passengers tp ON tp.trip_id = t.id
+      LEFT JOIN users u ON u.id = tp.user_id
+      WHERE t.status = 'active' ${companyId === null ? sql`` : sql`AND t.company_id = ${companyId}`}
+      ORDER BY t.seq, tp.joined_at, u.name`;
+    const trips = new Map<string, ActiveTrip>();
+    for (const row of rows) {
+      let trip = trips.get(row.id);
+      if (!trip) {
+        trip = {
+          id: row.id,
+          companyId: row.company_id,
+          driverId: row.driver_id,
+          route: { name: row.route_name, kind: row.route_kind },
+          startedAt: row.started_at,
+          passengers: [],
+        };
+        trips.set(row.id, trip);
+      }
+      if (row.user_id !== null) {
+        trip.passengers.push({
+          userId: row.user_id,
+          name: row.name ?? '',
+          address: row.address ?? '',
+          joinedAt: row.joined_at!,
+          confirmedAt: row.confirmed_at,
+        });
+      }
+    }
+    return [...trips.values()];
   }
 }
