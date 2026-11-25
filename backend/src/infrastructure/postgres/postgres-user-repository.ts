@@ -1,3 +1,4 @@
+import type { Company } from '../../companies/company.ts';
 import {
   normalizeEmail,
   type NewUser,
@@ -9,9 +10,18 @@ import {
   type UserWithCredentials,
 } from '../../users/user.ts';
 import { emailTaken } from '../../users/errors.ts';
-import { isUniqueViolation, type Sql } from './database.ts';
+import { isUniqueViolation, type Fragment, type Queryable, type Sql } from './database.ts';
 
-type UserRow = { id: string; email: string; name: string; address: string; role: Role; password_hash: string };
+type UserRow = {
+  id: string;
+  email: string;
+  name: string;
+  address: string;
+  role: Role;
+  password_hash: string;
+  created_at: Date;
+  companies: Company[];
+};
 
 export class PostgresUserRepository implements UserRepository {
   readonly #sql: Sql;
@@ -22,11 +32,14 @@ export class PostgresUserRepository implements UserRepository {
 
   async create(user: NewUser): Promise<User> {
     try {
-      const [row] = await this.#sql<UserRow[]>`
-        INSERT INTO users (email, password_hash, name, address, role)
-        VALUES (${normalizeEmail(user.email)}, ${user.passwordHash}, ${user.name}, ${user.address}, ${user.role})
-        RETURNING id, email, name, address, role, password_hash`;
-      return toUser(row!);
+      return await this.#sql.begin(async (tx) => {
+        const [row] = await tx<{ id: string }[]>`
+          INSERT INTO users (email, password_hash, name, address, role)
+          VALUES (${normalizeEmail(user.email)}, ${user.passwordHash}, ${user.name}, ${user.address}, ${user.role})
+          RETURNING id`;
+        await setCompanies(tx, row!.id, user.companyIds);
+        return toUser((await select(tx, tx`WHERE u.id = ${row!.id}`))[0]!);
+      });
     } catch (error) {
       if (isUniqueViolation(error, 'users_email_key')) throw emailTaken();
       throw error;
@@ -34,8 +47,7 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   async list(): Promise<UserSummary[]> {
-    const rows = await this.#sql<(UserRow & { created_at: Date })[]>`
-      SELECT id, email, name, address, role, password_hash, created_at FROM users ORDER BY role, name`;
+    const rows = await select(this.#sql, this.#sql``);
     return rows.map((row) => ({ ...toUser(row), createdAt: row.created_at }));
   }
 
@@ -46,13 +58,16 @@ export class PostgresUserRepository implements UserRepository {
     if (patch.address !== undefined) columns.address = patch.address;
     if (patch.role !== undefined) columns.role = patch.role;
     if (patch.passwordHash !== undefined) columns.password_hash = patch.passwordHash;
-    if (Object.keys(columns).length === 0) return this.findById(id);
     try {
-      // sql(columns) expands to a parameterized "col = $n, ..." list, only for the fields provided.
-      const [row] = await this.#sql<UserRow[]>`
-        UPDATE users SET ${this.#sql(columns)} WHERE id = ${id}
-        RETURNING id, email, name, address, role, password_hash`;
-      return row ? toUser(row) : null;
+      return await this.#sql.begin(async (tx) => {
+        const [existing] = await tx`SELECT 1 FROM users WHERE id = ${id} FOR UPDATE`;
+        if (!existing) return null;
+        // sql(columns) expands to a parameterized "col = $n, ..." list, only for the fields provided.
+        if (Object.keys(columns).length > 0) await tx`UPDATE users SET ${tx(columns)} WHERE id = ${id}`;
+        if (patch.companyIds !== undefined) await setCompanies(tx, id, patch.companyIds);
+        const [row] = await select(tx, tx`WHERE u.id = ${id}`);
+        return row ? toUser(row) : null;
+      });
     } catch (error) {
       if (isUniqueViolation(error, 'users_email_key')) throw emailTaken();
       throw error;
@@ -70,14 +85,12 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   async findById(id: string): Promise<User | null> {
-    const [row] = await this.#sql<UserRow[]>`
-      SELECT id, email, name, address, role, password_hash FROM users WHERE id = ${id}`;
+    const [row] = await select(this.#sql, this.#sql`WHERE u.id = ${id}`);
     return row ? toUser(row) : null;
   }
 
   async findByEmail(email: string): Promise<UserWithCredentials | null> {
-    const [row] = await this.#sql<UserRow[]>`
-      SELECT id, email, name, address, role, password_hash FROM users WHERE email = ${normalizeEmail(email)}`;
+    const [row] = await select(this.#sql, this.#sql`WHERE u.email = ${normalizeEmail(email)}`);
     return row ? { ...toUser(row), passwordHash: row.password_hash } : null;
   }
 
@@ -89,13 +102,37 @@ export class PostgresUserRepository implements UserRepository {
     });
   }
 
-  async pushTokensFor(role: Role): Promise<string[]> {
+  async pushTokensFor(role: Role, companyId: string): Promise<string[]> {
     const rows = await this.#sql<{ push_token: string }[]>`
-      SELECT push_token FROM users WHERE role = ${role} AND push_token IS NOT NULL`;
+      SELECT u.push_token FROM users u
+      JOIN user_companies uc ON uc.user_id = u.id
+      WHERE u.role = ${role} AND uc.company_id = ${companyId} AND u.push_token IS NOT NULL`;
     return rows.map((row) => row.push_token);
   }
 }
 
+/** Users with their companies (sorted by name), drivers first and then by name. */
+async function select(sql: Queryable, where: Fragment): Promise<UserRow[]> {
+  return sql<UserRow[]>`
+    SELECT u.id, u.email, u.name, u.address, u.role, u.password_hash, u.created_at,
+      COALESCE(
+        (SELECT json_agg(json_build_object('id', c.id, 'name', c.name) ORDER BY lower(c.name))
+         FROM user_companies uc JOIN companies c ON c.id = uc.company_id
+         WHERE uc.user_id = u.id),
+        '[]'::json
+      ) AS companies
+    FROM users u
+    ${where}
+    ORDER BY u.role, u.name`;
+}
+
+async function setCompanies(sql: Queryable, userId: string, companyIds: string[]): Promise<void> {
+  await sql`DELETE FROM user_companies WHERE user_id = ${userId}`;
+  for (const companyId of new Set(companyIds)) {
+    await sql`INSERT INTO user_companies (user_id, company_id) VALUES (${userId}, ${companyId})`;
+  }
+}
+
 function toUser(row: UserRow): User {
-  return { id: row.id, email: row.email, name: row.name, address: row.address, role: row.role };
+  return { id: row.id, email: row.email, name: row.name, address: row.address, role: row.role, companies: row.companies };
 }

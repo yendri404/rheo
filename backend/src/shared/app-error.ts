@@ -11,7 +11,14 @@ export type ErrorCode =
   | 'VALIDATION_FAILED'
   | 'USER_NOT_FOUND'
   | 'USER_IN_ACTIVE_TRIP'
-  | 'TOO_MANY_ATTEMPTS';
+  | 'TOO_MANY_ATTEMPTS'
+  | 'NO_ROUTES'
+  | 'NO_COMPANY'
+  | 'COMPANY_REQUIRED'
+  | 'COMPANY_NOT_FOUND'
+  | 'COMPANY_NAME_TAKEN'
+  | 'COMPANY_HAS_MEMBERS'
+  | 'COMPANY_IN_ACTIVE_TRIP';
 
 export class AppError extends Error {
   readonly code: ErrorCode;

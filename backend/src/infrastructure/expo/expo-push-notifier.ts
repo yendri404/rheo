@@ -1,5 +1,4 @@
 import type { TripNotifier } from '../../trips/ports.ts';
-import { ROUTE_LABELS, type RouteName } from '../../trips/route.ts';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const MAX_MESSAGES_PER_REQUEST = 100;
@@ -16,13 +15,13 @@ export class ExpoPushNotifier implements TripNotifier {
     this.#accessToken = options.accessToken;
   }
 
-  async tripStarted(route: RouteName, pushTokens: string[]): Promise<void> {
+  async tripStarted(routeName: string, pushTokens: string[]): Promise<void> {
     const messages = pushTokens.map((to) => ({
       to,
       sound: 'default',
-      title: `Ruta ${ROUTE_LABELS[route]} iniciada`,
+      title: `Ruta ${routeName} iniciada`,
       body: 'El chofer comenzó la ruta. Abre la app si vas a usar el transporte.',
-      data: { type: 'trip.started', route },
+      data: { type: 'trip.started', route: routeName },
     }));
 
     for (let i = 0; i < messages.length; i += MAX_MESSAGES_PER_REQUEST) {

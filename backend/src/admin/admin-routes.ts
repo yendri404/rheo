@@ -15,12 +15,33 @@ const role = z.enum(['driver', 'passenger']);
 const password = z.string().min(8).max(200);
 
 const loginBody = z.object({ password: z.string().min(1).max(200) });
-const createBody = z.object({ name, email, address: address.default(''), role, password });
+const companyIds = z.array(z.uuid()).max(50);
+const createBody = z.object({ name, email, address: address.default(''), role, password, companyIds });
 const updateBody = z
-  .object({ name, email, address, role, password })
+  .object({ name, email, address, role, password, companyIds })
   .partial()
   .refine((changes) => Object.keys(changes).length > 0, 'Nothing to update');
-const userParams = z.object({ id: z.uuid() });
+const idParams = z.object({ id: z.uuid() });
+
+// Route names are short on purpose: the app shows them in a large banner on a phone screen.
+const route = z.object({
+  id: z.uuid().optional(),
+  name: z.string().trim().min(1).max(24),
+  kind: z.enum(['pickup', 'dropoff']),
+});
+const routes = z
+  .array(route)
+  .max(20)
+  .refine(
+    (list) => new Set(list.map((item) => item.name.toLowerCase())).size === list.length,
+    'Route names must be unique within a company',
+  );
+const companyName = z.string().trim().min(1).max(60);
+const createCompanyBody = z.object({ name: companyName, routes: routes.default([]) });
+const updateCompanyBody = z
+  .object({ name: companyName, routes })
+  .partial()
+  .refine((changes) => Object.keys(changes).length > 0, 'Nothing to update');
 
 // The page is static and self-contained: everything is served from this origin except Google Fonts.
 const CONTENT_SECURITY_POLICY = [
@@ -110,14 +131,37 @@ export function registerAdminRoutes(
 
   app.patch('/admin/users/:id', async (request) => {
     await requireAdmin(request);
-    const { id } = userParams.parse(request.params);
+    const { id } = idParams.parse(request.params);
     return { user: await adminService.update(id, updateBody.parse(request.body)) };
   });
 
   app.delete('/admin/users/:id', async (request, reply) => {
     await requireAdmin(request);
-    const { id } = userParams.parse(request.params);
+    const { id } = idParams.parse(request.params);
     await adminService.delete(id);
+    return reply.status(204).send();
+  });
+
+  app.get('/admin/companies', async (request) => {
+    await requireAdmin(request);
+    return { companies: await adminService.listCompanies() };
+  });
+
+  app.post('/admin/companies', async (request, reply) => {
+    await requireAdmin(request);
+    return reply.status(201).send({ company: await adminService.createCompany(createCompanyBody.parse(request.body)) });
+  });
+
+  app.patch('/admin/companies/:id', async (request) => {
+    await requireAdmin(request);
+    const { id } = idParams.parse(request.params);
+    return { company: await adminService.updateCompany(id, updateCompanyBody.parse(request.body)) };
+  });
+
+  app.delete('/admin/companies/:id', async (request, reply) => {
+    await requireAdmin(request);
+    const { id } = idParams.parse(request.params);
+    await adminService.deleteCompany(id);
     return reply.status(204).send();
   });
 }

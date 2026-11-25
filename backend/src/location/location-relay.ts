@@ -4,11 +4,12 @@ import { z } from 'zod';
 import { AppError } from '../shared/app-error.ts';
 import type { ActiveTrip } from '../trips/trip.ts';
 import type { TripService } from '../trips/trip-service.ts';
-import type { User } from '../users/user.ts';
+import { isMember, type User } from '../users/user.ts';
 
 /**
  * Live driver location, isolated from the trip flow: positions live only in memory (never in the
  * database), are relayed only while a trip is active, and only to passengers who joined that trip.
+ * With several companies running at once, a driver's position only reaches the trips they started.
  */
 
 const WS_AUTH_TIMEOUT_MS = 5_000;
@@ -28,17 +29,26 @@ export type PositionReport = z.infer<typeof positionFields>;
 /** `relayed`/`throttled` both mean "keep sending"; `no-trip` means the driver should stop tracking. */
 export type ReportOutcome = 'relayed' | 'throttled' | 'no-trip';
 
-type DriverPosition = { tripId: string; lat: number; lng: number; heading: number | null; at: Date };
+type DriverPosition = { lat: number; lng: number; heading: number | null; at: Date };
 type Client = { socket: WebSocket; user: User };
 
 export function canSeeDriver(trip: ActiveTrip | null, user: User): trip is ActiveTrip {
   return trip !== null && user.role === 'passenger' && trip.passengers.some((passenger) => passenger.userId === user.id);
 }
 
+/** Trips started before drivers were recorded belong to any driver of their company. */
+export function drives(trip: ActiveTrip, driver: User): boolean {
+  if (trip.driverId !== null) return trip.driverId === driver.id;
+  return isMember(driver, trip.companyId);
+}
+
 export class LocationRelay {
   readonly #clients = new Set<Client>();
   readonly #tripService: TripService;
-  #last: DriverPosition | null = null;
+  /** Latest position per running trip. */
+  readonly #last = new Map<string, DriverPosition>();
+  /** Time of the latest accepted report per driver, for throttling. */
+  readonly #reportedAt = new Map<string, number>();
 
   constructor(tripService: TripService) {
     this.#tripService = tripService;
@@ -50,13 +60,15 @@ export class LocationRelay {
     socket.on('close', () => this.#clients.delete(client));
     if (user.role === 'driver') {
       socket.on('message', (raw) => {
-        this.#onPosition(raw.toString()).catch(() => {});
+        this.#onPosition(user, raw.toString()).catch(() => {});
       });
       return;
     }
     // Late joiners see the driver right away instead of waiting for the next update.
-    const trip = (await this.#tripService.state()).activeTrip;
-    if (this.#last && trip?.id === this.#last.tripId && canSeeDriver(trip, user)) send(client, this.#last);
+    for (const trip of await this.#tripService.activeTrips()) {
+      const last = this.#last.get(trip.id);
+      if (last && canSeeDriver(trip, user)) send(client, last);
+    }
   }
 
   close(): void {
@@ -65,26 +77,37 @@ export class LocationRelay {
   }
 
   /** Shared by the WebSocket and the HTTP endpoint the phone uses while the app is in the background. */
-  async report(position: PositionReport): Promise<ReportOutcome> {
+  async report(driver: User, position: PositionReport): Promise<ReportOutcome> {
     const now = new Date();
-    if (this.#last && now.getTime() - this.#last.at.getTime() < MIN_INTERVAL_MS) return 'throttled';
+    const previous = this.#reportedAt.get(driver.id);
+    if (previous !== undefined && now.getTime() - previous < MIN_INTERVAL_MS) return 'throttled';
 
-    const trip = (await this.#tripService.state()).activeTrip;
-    if (!trip) {
-      this.#last = null; // Nothing to share outside a trip, and nothing kept for later.
+    const active = await this.#tripService.activeTrips();
+    // Nothing is kept for trips that are over.
+    for (const tripId of this.#last.keys()) {
+      if (!active.some((trip) => trip.id === tripId)) this.#last.delete(tripId);
+    }
+    const own = active.filter((trip) => drives(trip, driver));
+    if (own.length === 0) {
+      this.#reportedAt.delete(driver.id); // Nothing to share outside a trip.
       return 'no-trip';
     }
+
+    this.#reportedAt.set(driver.id, now.getTime());
     const { lat, lng, heading } = position;
-    this.#last = { tripId: trip.id, lat, lng, heading: heading ?? null, at: now };
-    for (const client of this.#clients) {
-      if (canSeeDriver(trip, client.user)) send(client, this.#last);
+    const last: DriverPosition = { lat, lng, heading: heading ?? null, at: now };
+    for (const trip of own) {
+      this.#last.set(trip.id, last);
+      for (const client of this.#clients) {
+        if (canSeeDriver(trip, client.user)) send(client, last);
+      }
     }
     return 'relayed';
   }
 
-  async #onPosition(raw: string): Promise<void> {
+  async #onPosition(driver: User, raw: string): Promise<void> {
     const parsed = positionMessage.safeParse(safeJson(raw));
-    if (parsed.success) await this.report(parsed.data);
+    if (parsed.success) await this.report(driver, parsed.data);
   }
 }
 
@@ -132,7 +155,7 @@ export function registerLocationRoutes(
     if (!header?.startsWith('Bearer ')) throw new AppError('UNAUTHENTICATED', 'Missing session.');
     const user = await deps.authenticate(header.slice('Bearer '.length));
     if (user.role !== 'driver') throw new AppError('FORBIDDEN', 'Only the driver shares a location.');
-    const outcome = await relay.report(positionFields.parse(request.body));
+    const outcome = await relay.report(user, positionFields.parse(request.body));
     if (outcome === 'no-trip') throw new AppError('NO_ACTIVE_TRIP', 'No active trip.');
     return reply.status(204).send();
   });

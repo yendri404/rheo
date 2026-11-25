@@ -3,18 +3,22 @@ import type { TripEvents, TripState } from '../../trips/ports.ts';
 import { viewFor } from '../../trips/views.ts';
 import type { User } from '../../users/user.ts';
 
-type Client = { socket: WebSocket; user: User; alive: boolean };
+type Client = { socket: WebSocket; user: User; companyId: string; alive: boolean };
+
+/** Standard "service restart" close code: clients reconnect and authenticate again. */
+const WS_RECONNECT = 1012;
 
 /**
- * Pushes the full role-specific state snapshot on every change.
+ * Pushes the full role-specific state snapshot of a company to the clients watching that company.
  * Snapshots are tiny (one trip, tens of passengers), and clients never drift out of sync.
  */
 export class WsHub implements TripEvents {
   readonly #clients = new Set<Client>();
   #heartbeat: NodeJS.Timeout | undefined;
 
+  /** The caller has already checked that the user belongs to the company of `state`. */
   add(socket: WebSocket, user: User, state: TripState): void {
-    const client: Client = { socket, user, alive: true };
+    const client: Client = { socket, user, companyId: state.companyId, alive: true };
     this.#clients.add(client);
     socket.on('pong', () => {
       client.alive = true;
@@ -24,7 +28,21 @@ export class WsHub implements TripEvents {
   }
 
   publish(state: TripState): void {
-    for (const client of this.#clients) send(client, state);
+    for (const client of this.#clients) {
+      if (client.companyId === state.companyId) send(client, state);
+    }
+  }
+
+  /**
+   * Call when a user's role or companies change, or the user is deleted: their sockets are dropped
+   * so they come back through authentication instead of still watching a company they left.
+   */
+  disconnectUser(userId: string): void {
+    for (const client of this.#clients) {
+      if (client.user.id !== userId) continue;
+      this.#clients.delete(client);
+      client.socket.close(WS_RECONNECT, 'Account changed');
+    }
   }
 
   get size(): number {
