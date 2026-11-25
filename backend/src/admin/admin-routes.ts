@@ -35,7 +35,11 @@ const routes = z
   .refine(
     (list) => new Set(list.map((item) => item.name.toLowerCase())).size === list.length,
     'Route names must be unique within a company',
-  );
+  )
+  .refine((list) => {
+    const ids = list.flatMap((item) => (item.id ? [item.id] : []));
+    return new Set(ids).size === ids.length;
+  }, 'A route can only appear once');
 const companyName = z.string().trim().min(1).max(60);
 const createCompanyBody = z.object({ name: companyName, routes: routes.default([]) });
 const updateCompanyBody = z

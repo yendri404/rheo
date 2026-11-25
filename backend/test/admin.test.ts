@@ -427,6 +427,11 @@ describe('admin company management', () => {
     ]);
 
     expect((await call('PATCH', `/admin/companies/${eureka.id}`, admin, {})).statusCode).toBe(400);
+    const twice = [
+      { id: norte!.id, name: 'Norte', kind: 'dropoff' },
+      { id: norte!.id, name: 'Norte 2', kind: 'dropoff' },
+    ];
+    expect((await call('PATCH', `/admin/companies/${eureka.id}`, admin, { routes: twice })).statusCode).toBe(400);
     expect((await call('PATCH', `/admin/companies/${eureka.id}`, admin, { name: 'acme' })).json().error.code).toBe(
       'COMPANY_NAME_TAKEN',
     );
