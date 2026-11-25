@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { wsUrl } from '../api/api-url';
+import { isStale, measuredAt, SILENT_SOCKET_MS } from './driver-position';
 
-export type DriverPosition = { lat: number; lng: number; heading: number | null; at: string };
+/** `measuredAt`: when the position was true, on this phone's clock (see driver-position.ts). */
+export type DriverPosition = { lat: number; lng: number; heading: number | null; at: string; measuredAt: number };
 
-/** No update for this long means the location on screen may be outdated. */
-export const STALE_AFTER_MS = 20_000;
 const MAX_BACKOFF_MS = 15_000;
 
 /**
@@ -24,16 +24,28 @@ export function useDriverLocation(token: string, enabled: boolean) {
     let disposed = false;
     let attempt = 0;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    let lastActivity = Date.now();
 
     function connect() {
       const current = new WebSocket(wsUrl('/ws/location'));
       socket = current;
-      current.onopen = () => current.send(JSON.stringify({ type: 'auth', token }));
+      lastActivity = Date.now();
+      current.onopen = () => {
+        lastActivity = Date.now();
+        current.send(JSON.stringify({ type: 'auth', token }));
+      };
       current.onmessage = (event) => {
         const message = JSON.parse(String(event.data));
         if (message.type !== 'driver-position') return;
         attempt = 0;
-        setPosition({ lat: message.lat, lng: message.lng, heading: message.heading ?? null, at: message.at });
+        lastActivity = Date.now();
+        setPosition({
+          lat: message.lat,
+          lng: message.lng,
+          heading: message.heading ?? null,
+          at: message.at,
+          measuredAt: measuredAt(message.ageMs, Date.now()),
+        });
       };
       current.onclose = (event) => {
         if (disposed || socket !== current || event.code === 4401) return;
@@ -42,9 +54,25 @@ export function useDriverLocation(token: string, enabled: boolean) {
     }
 
     connect();
+
+    // A phone that changed network keeps a socket that looks open but receives nothing. The driver
+    // reports every 10 s at most, so a long silence means this socket is dead: open a new one,
+    // which also brings the last known position.
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastActivity < SILENT_SOCKET_MS) return;
+      lastActivity = Date.now();
+      clearTimeout(retry);
+      attempt = 0;
+      const silent = socket;
+      socket = null;
+      silent?.close();
+      connect();
+    }, 10_000);
+
     return () => {
       disposed = true;
       clearTimeout(retry);
+      clearInterval(watchdog);
       socket?.close();
     };
   }, [token, enabled]);
@@ -56,6 +84,6 @@ export function useDriverLocation(token: string, enabled: boolean) {
     return () => clearInterval(timer);
   }, [enabled]);
 
-  const stale = position !== null && now - new Date(position.at).getTime() > STALE_AFTER_MS;
+  const stale = position !== null && isStale(position.measuredAt, now);
   return { position, stale };
 }

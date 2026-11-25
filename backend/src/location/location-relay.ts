@@ -30,7 +30,7 @@ export type PositionReport = z.infer<typeof positionFields>;
 export type ReportOutcome = 'relayed' | 'throttled' | 'no-trip';
 
 type DriverPosition = { lat: number; lng: number; heading: number | null; at: Date };
-type Client = { socket: WebSocket; user: User };
+type Client = { socket: WebSocket; user: User; alive: boolean };
 
 export function canSeeDriver(trip: ActiveTrip | null, user: User): trip is ActiveTrip {
   return trip !== null && user.role === 'passenger' && trip.passengers.some((passenger) => passenger.userId === user.id);
@@ -49,14 +49,18 @@ export class LocationRelay {
   readonly #last = new Map<string, DriverPosition>();
   /** Time of the latest accepted report per driver, for throttling. */
   readonly #reportedAt = new Map<string, number>();
+  #heartbeat: NodeJS.Timeout | undefined;
 
   constructor(tripService: TripService) {
     this.#tripService = tripService;
   }
 
   async add(socket: WebSocket, user: User): Promise<void> {
-    const client: Client = { socket, user };
+    const client: Client = { socket, user, alive: true };
     this.#clients.add(client);
+    socket.on('pong', () => {
+      client.alive = true;
+    });
     socket.on('close', () => this.#clients.delete(client));
     if (user.role === 'driver') {
       socket.on('message', (raw) => {
@@ -71,7 +75,27 @@ export class LocationRelay {
     }
   }
 
+  /**
+   * Pings every client. The traffic keeps proxies and mobile carriers from cutting a socket that is
+   * quiet between positions, and phones that stopped answering (lost signal) are dropped.
+   */
+  startHeartbeat(intervalMs = 25_000): void {
+    this.#heartbeat = setInterval(() => {
+      for (const client of this.#clients) {
+        if (!client.alive) {
+          client.socket.terminate();
+          this.#clients.delete(client);
+          continue;
+        }
+        client.alive = false;
+        client.socket.ping();
+      }
+    }, intervalMs);
+    this.#heartbeat.unref();
+  }
+
   close(): void {
+    clearInterval(this.#heartbeat);
     for (const { socket } of this.#clients) socket.close(1001, 'Server shutting down');
     this.#clients.clear();
   }
@@ -114,7 +138,9 @@ export class LocationRelay {
 function send(client: Client, position: DriverPosition): void {
   if (client.socket.readyState !== client.socket.OPEN) return;
   const { lat, lng, heading, at } = position;
-  client.socket.send(JSON.stringify({ type: 'driver-position', lat, lng, heading, at: at.toISOString() }));
+  // `ageMs` lets the phone judge freshness without its clock having to match the server's.
+  const ageMs = Math.max(0, Date.now() - at.getTime());
+  client.socket.send(JSON.stringify({ type: 'driver-position', lat, lng, heading, at: at.toISOString(), ageMs }));
 }
 
 function safeJson(raw: string): unknown {
@@ -135,6 +161,7 @@ export function registerLocationRoutes(
   deps: { authenticate: (token: string) => Promise<User>; tripService: TripService },
 ): void {
   const relay = new LocationRelay(deps.tripService);
+  relay.startHeartbeat();
 
   app.get('/ws/location', { websocket: true }, (socket) => {
     const timeout = setTimeout(() => socket.close(WS_UNAUTHORIZED, 'Authentication timeout'), WS_AUTH_TIMEOUT_MS);
