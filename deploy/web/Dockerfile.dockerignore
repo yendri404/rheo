@@ -1,0 +1,14 @@
+# Used automatically by BuildKit for deploy/web/Dockerfile (repo root context).
+*
+!mobile
+!deploy/web/Caddyfile
+mobile/node_modules
+mobile/android
+mobile/ios
+mobile/dist
+mobile/web-build
+mobile/.expo
+mobile/.claude
+mobile/.env
+mobile/.env.*
+mobile/public/maplibre-gl-worker.mjs

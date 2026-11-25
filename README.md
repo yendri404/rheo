@@ -95,6 +95,16 @@ Railway builds each folder from its `Dockerfile` and gives every service an HTTP
 
 Pick the branch each service deploys from in its settings. The web service is the PWA: `mobile/Dockerfile` runs `expo export` and serves `dist/` with Caddy (`mobile/Caddyfile`, single-page fallback, `no-cache` on everything except hashed `/_expo/static/` files so new deploys reach installed apps). Open its domain in Chrome on Android and use **Install app**, or **Add to Home Screen** in Safari on iOS. On web, the driver's location is only shared while the app is open on screen.
 
+### Self-host the web app (any Docker host)
+
+Separate from Railway: `docker-compose.web.yml` + `deploy/web/` build the PWA into a Caddy image and never touch `mobile/Dockerfile`. It needs an API reachable over HTTPS (the API URL is baked into the bundle, so rebuild when it changes).
+
+```bash
+EXPO_PUBLIC_API_URL=https://api.example.com docker compose -f docker-compose.web.yml up -d --build
+```
+
+Serves plain HTTP on port 80 (`WEB_PORT` to change it). Set `SITE_ADDRESS=app.example.com` for automatic HTTPS (ports 80/443 open, DNS pointing at the host).
+
 ### Develop and test
 
 ```bash
