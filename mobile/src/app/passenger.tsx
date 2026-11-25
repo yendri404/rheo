@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { errorMessage } from '../api/client';
-import { ROUTE_LABELS, type PassengerState } from '../api/types';
+import type { PassengerState } from '../api/types';
 import { DriverMap } from '../map/driver-map';
 import { useDriverProximity } from '../map/use-driver-proximity';
 import { prepareLocalNotifications } from '../notifications/local';
@@ -27,8 +27,12 @@ export default function PassengerRoute() {
 }
 
 function PassengerScreen() {
-  const { session, api, signOut } = useAuthenticated();
-  const { state, setState, connected } = useTripState<PassengerState>(session.token, api, signOut);
+  const { session, api, signOut, refreshUser } = useAuthenticated();
+  // No company selector here: a passenger belongs to one company and the server uses it.
+  const { state, setState, connected, unavailable } = useTripState<PassengerState>(session.token, api, {
+    onUnauthorized: signOut,
+    onCompanyUnavailable: refreshUser,
+  });
   const [busy, setBusy] = useState<'join' | 'leave' | null>(null);
   const [error, setError] = useState<string | null>(null);
   useTripStartedNotification(state);
@@ -51,8 +55,8 @@ function PassengerScreen() {
   const pickedUp = trip?.confirmed ?? false;
   // The map and both location feeds only matter while waiting to be picked up. Once on board the
   // driver socket and GPS are closed to save mobile data and battery. The passenger's position stays on the device.
-  // Evening routes (Norte/Sur) have no map or GPS at all, only the morning route does.
-  const waitingForPickup = joined && !pickedUp && trip !== null && trip.route === 'manana';
+  // Dropoff routes have no map or GPS at all, only pickup routes do.
+  const waitingForPickup = joined && !pickedUp && trip !== null && trip.route.kind === 'pickup';
   const driverLocation = useDriverLocation(session.token, waitingForPickup);
   const ownLocation = useOwnLocation(waitingForPickup);
   const proximity = useDriverProximity(
@@ -61,17 +65,21 @@ function PassengerScreen() {
     trip?.id ?? null,
   );
 
-  const status = !state
-    ? 'Cargando…'
-    : !trip
-      ? 'Te avisaremos cuando el chofer inicie la ruta.'
-      : pickedUp
-        ? 'El chofer confirmó tu parada. ¡Buen viaje!'
-        : joined && proximity.near
-          ? '¡El chofer está a menos de 200 m!'
-          : joined
-            ? 'El chofer ya te ve en su lista.'
-            : 'Si no vas a usar el transporte, no necesitas hacer nada.';
+  const route = trip?.route ?? state?.nextRoute ?? null;
+
+  const status = unavailable
+    ? 'Tu cuenta todavía no está asignada a una empresa. Avísale al administrador.'
+    : !state
+      ? 'Cargando…'
+      : !trip
+        ? 'Te avisaremos cuando el chofer inicie la ruta.'
+        : pickedUp
+          ? 'El chofer confirmó tu parada. ¡Buen viaje!'
+          : joined && proximity.near
+            ? '¡El chofer está a menos de 200 m!'
+            : joined
+              ? 'El chofer ya te ve en su lista.'
+              : 'Si no vas a usar el transporte, no necesitas hacer nada.';
 
   return (
     <ScreenLayout
@@ -125,13 +133,16 @@ function PassengerScreen() {
       }
     >
       {!state ? (
-        <ActivityIndicator color={colors.primary} />
+        // Nothing to load while the account has no company; the header explains it.
+        !unavailable && <ActivityIndicator color={colors.primary} />
       ) : (
         <View>
-          <Text style={styles.caption}>{trip ? 'Ruta en curso:' : 'Próxima ruta:'}</Text>
+          <Text style={styles.caption}>
+            {trip ? 'Ruta en curso:' : route ? 'Próxima ruta:' : 'Tu empresa todavía no tiene rutas.'}
+          </Text>
           <View style={styles.banner}>
             <RouteBanner
-              label={ROUTE_LABELS[trip?.route ?? state.nextRoute]}
+              label={route?.name ?? '—'}
               highlighted={!!trip && !joined}
               // Center stage unless the map is showing; then it shrinks to leave room for it.
               size={waitingForPickup ? 'compact' : 'large'}

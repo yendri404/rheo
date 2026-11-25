@@ -30,6 +30,8 @@ type Props = {
    */
   footerPosition?: 'pinned' | 'inline';
   onSignOut?: () => void;
+  /** Interactive control at the start of the top bar (the header itself does not take touches). */
+  topStart?: ReactNode;
   connected?: boolean;
   /** Changing it replays the entrance animation (header fades in, sheet content springs up). */
   contentKey?: string;
@@ -67,6 +69,7 @@ export function ScreenLayout({
   footer,
   footerPosition = 'pinned',
   onSignOut,
+  topStart,
   connected = true,
   contentKey = 'default',
   sheet = 'fill',
@@ -147,8 +150,9 @@ export function ScreenLayout({
         </Animated.View>
       )}
       <View style={[styles.topBar, { paddingTop: insets.top, height: topBarHeight }]}>
+        {topStart && <View style={styles.topStart}>{topStart}</View>}
         {!connected && (
-          <Animated.Text entering={motion.textEnter} style={styles.offline}>
+          <Animated.Text entering={motion.textEnter} style={[styles.offline, !!topStart && styles.offlineCompact]}>
             Reconectando…
           </Animated.Text>
         )}
@@ -259,7 +263,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     zIndex: 2,
   },
+  // Takes the free space, pushing the rest of the bar to the end; shrinks before the sign-out pill does.
+  topStart: { flex: 1, flexDirection: 'row', minWidth: 0 },
   offline: { fontFamily: fonts.regular, color: colors.accent, fontSize: 13, flex: 1 },
+  offlineCompact: { flex: 0 },
   // Dark pill with an icon, as in the reference design.
   signOut: {
     flexDirection: 'row',

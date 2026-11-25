@@ -42,15 +42,24 @@ docker compose up -d --build
 This is a **private app: there is no self sign-up**. Only an administrator creates accounts, from the [admin panel](#admin-panel) or with these scripts:
 
 ```bash
-# Create a passenger (or --role driver)
+# Create a passenger in a company (or --role driver, repeating --company for each company they drive for)
 docker compose exec api node scripts/create-user.ts \
-  --email ana@example.com --password 'min-8-chars' --name "Ana" --address "Calle 1 #23" --role passenger
+  --email ana@example.com --password 'min-8-chars' --name "Ana" --address "Calle 1 #23" --role passenger --company Eureka
 
 # Change an existing account's role (the app switches screens the next time it opens)
 docker compose exec api node scripts/set-role.ts --email ana@example.com --role driver
 ```
 
-The schema is applied automatically on every boot (`backend/src/infrastructure/postgres/schema.sql`).
+The schema is applied automatically on every boot (`backend/src/infrastructure/postgres/schema.sql`). A database created before companies existed is upgraded on that boot: its users, trips and the routes Mañana, Norte and Sur become the company **Eureka**.
+
+### Companies and routes
+
+Every route belongs to a **company**, and users only see and run the routes of the companies they are registered in.
+
+- A company has its own ordered list of routes. Each started trip takes the next one in that order, and each company rotates on its own. A route is either **pickup** (passengers see the driver on the map, the phone shares GPS) or **dropoff** (no map, no GPS).
+- Each company has its own trip: two companies can have a route in progress at the same time, with separate passenger lists, notifications and live state.
+- A **passenger** belongs to exactly one company. A **driver** belongs to one or more and picks which one to work with from the dropdown at the top of the driver screen; the choice is locked while that company has a route in progress. The driver's position is only shared with the trip that driver started.
+- Companies, their routes and who belongs to each are managed in the [admin panel](#admin-panel).
 
 ### Deploy the API anywhere
 
@@ -94,7 +103,7 @@ npm install
 npm test           # domain, HTTP, realtime and in-memory contract tests
 npm run typecheck
 
-# Also run the repository contract against a real Postgres:
+# Also run the repository contract and the schema migration against a real Postgres:
 TEST_DATABASE_URL=postgres://user:pass@localhost:5432/test npm test
 ```
 
@@ -157,16 +166,20 @@ The web map loads MapLibre's worker from `mobile/public/maplibre-gl-worker.mjs`.
 
 Open **http://localhost:3000/admin** to list, create, edit and delete passengers and drivers. You can also change roles and reset passwords. The panel is served by the API itself, with no build step.
 
+- **Companies:** the "Empresas" section creates, renames and deletes companies and edits their routes (name, pickup or dropoff, and order of rotation). Each user is assigned one company (passengers) or several (drivers) in the user form, and the user list can be filtered by company. A company can only be deleted once it has no users and no route in progress.
+
 - **Access:** a single master password, `ADMIN_PASSWORD` (12+ characters), set in `.env` next to `docker-compose.yml`. If it is unset or empty, the panel and its API do not exist (404).
 - **Brute force:** 5 wrong attempts from one address lock that address out for 15 minutes.
 - **Sessions:** admin sessions last 8 hours, are stored in the tab's `sessionStorage`, and are rejected by the app. App sessions are rejected by the panel.
-- **The running trip is protected:** nobody in it can be deleted or change role, and drivers cannot be deleted or demoted while a trip is running.
+- **The running trip is protected:** nobody in it can be deleted, change role or be taken out of that company, and its drivers cannot be deleted, demoted or removed from the company while the trip is running.
 - **New users:** "Generar" creates a strong password, which is shown once (with a copy button) so you can hand it over.
 - **Hardening:** the page sends a strict Content-Security-Policy and only ever renders user data as text.
 
 ## API
 
-All routes except `/health` and `/auth/login` need `Authorization: Bearer <token>`. Every trip endpoint returns the role-specific state view.
+All routes except `/health` and `/auth/login` need `Authorization: Bearer <token>`. Every trip endpoint returns the role-specific state view of one company.
+
+Trip endpoints accept `?companyId=<id>`. It is optional for users registered in a single company and required for drivers registered in several (`400 COMPANY_REQUIRED`). Naming a company the user is not registered in answers `403 FORBIDDEN`; a user without any company gets `409 NO_COMPANY`. `/me` and the login response list the user's `companies`.
 
 | Method | Path | Who |
 |---|---|---|
@@ -174,17 +187,19 @@ All routes except `/health` and `/auth/login` need `Authorization: Bearer <token
 | GET | `/me` | any user |
 | PUT | `/me/push-token` `{ token: string \| null }` | any user |
 | GET | `/trips/current` | any user |
-| POST | `/trips` | driver: starts the next route in the rotation |
+| POST | `/trips` | driver: starts the next route in the company's rotation. `409 NO_ROUTES` if the company has none |
 | POST | `/trips/current/passengers` | passenger: joins the active trip (idempotent) |
 | DELETE | `/trips/current/passengers` | passenger: cancels their seat (idempotent). `409 STOP_ALREADY_CONFIRMED` once picked up |
 | POST | `/trips/current/passengers/:userId/confirm` | driver |
 | POST | `/trips/current/finish` | driver: only when every stop is confirmed |
 | WS | `/ws/location` | auth first like `/ws`; the driver sends `{ type: "position", lat, lng, heading? }`, joined passengers receive `{ type: "driver-position", ... }` |
-| POST | `/location` | driver: `{ lat, lng, heading? }` relayed like `/ws/location` (used by background tracking); `204`, or `409 NO_ACTIVE_TRIP` when no trip is open |
+| POST | `/location` | driver: `{ lat, lng, heading? }` relayed like `/ws/location` (used by background tracking), only to the trip that driver started; `204`, or `409 NO_ACTIVE_TRIP` when they have none open |
 | POST | `/admin/login` `{ password }` | admin: master password, returns an 8 h admin token (`429` after 5 failures) |
-| GET / POST | `/admin/users` | admin: list / create (`{ name, email, address, role, password }`) |
-| PATCH / DELETE | `/admin/users/:id` | admin: edit any field (incl. `role`, `password`) / delete. `409 USER_IN_ACTIVE_TRIP` while in the running trip |
-| WS | `/ws` | send `{ "type": "auth", "token": "..." }` first. You then receive `{ type: "state", data }` on every change |
+| GET / POST | `/admin/users` | admin: list / create (`{ name, email, address, role, password, companyIds }`) |
+| PATCH / DELETE | `/admin/users/:id` | admin: edit any field (incl. `role`, `password`, `companyIds`) / delete. `409 USER_IN_ACTIVE_TRIP` while in the running trip |
+| GET / POST | `/admin/companies` | admin: list / create (`{ name, routes: [{ name, kind: "pickup" \| "dropoff" }] }`, routes in rotation order) |
+| PATCH / DELETE | `/admin/companies/:id` | admin: rename and/or replace the route list (keep a route's `id` to rename or move it) / delete. `409 COMPANY_HAS_MEMBERS`, `409 COMPANY_IN_ACTIVE_TRIP` |
+| WS | `/ws` | send `{ "type": "auth", "token": "...", "companyId"?: "..." }` first. You then receive `{ type: "state", data }` on every change of that company. Closes with `4403` when the company is not available to the user |
 
 Passengers never receive other passengers' names or addresses.
 

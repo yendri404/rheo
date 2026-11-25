@@ -13,12 +13,28 @@ type SessionContextValue = {
   api: AuthenticatedApi | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Re-reads the profile: picks up a new role or a change in the user's companies. */
+  refreshUser: () => Promise<void>;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 function sameUser(a: User, b: User): boolean {
-  return a.id === b.id && a.role === b.role && a.name === b.name && a.address === b.address && a.email === b.email;
+  return (
+    a.id === b.id &&
+    a.role === b.role &&
+    a.name === b.name &&
+    a.address === b.address &&
+    a.email === b.email &&
+    a.companies.length === b.companies.length &&
+    a.companies.every((company, index) => company.id === b.companies[index]!.id && company.name === b.companies[index]!.name)
+  );
+}
+
+/** Sessions stored before companies existed have no list yet; the profile refresh on start fills it in. */
+function restore(stored: string): Session {
+  const session = JSON.parse(stored) as Session;
+  return { ...session, user: { ...session.user, companies: session.user.companies ?? [] } };
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -39,7 +55,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     secureStorage
       .get(STORAGE_KEY)
       .then((stored) => {
-        setSession(stored ? (JSON.parse(stored) as Session) : null);
+        setSession(stored ? restore(stored) : null);
         // Re-save once so sessions stored before the accessibility change become readable while locked.
         if (stored) secureStorage.set(STORAGE_KEY, stored).catch(() => {});
       })
@@ -65,25 +81,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return guarded;
   }, [token, clear]);
 
-  // On every app start: validate the session, pick up profile or role changes
+  const refreshUser = useCallback(async () => {
+    if (!api || !token) return;
+    const user = await api.me().catch(() => null);
+    if (!user) return;
+    setSession((current) => {
+      if (!current || current.token !== token || sameUser(current.user, user)) return current;
+      const next = { token, user };
+      secureStorage.set(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, [api, token]);
+
+  // On every app start: validate the session, pick up profile, role or company changes
   // (a passenger promoted to driver switches screens), and register for push.
   useEffect(() => {
     if (!api || !token) return;
-    api
-      .me()
-      .then((user) => {
-        setSession((current) => {
-          if (!current || current.token !== token || sameUser(current.user, user)) return current;
-          const next = { token, user };
-          secureStorage.set(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
-          return next;
-        });
-      })
-      .catch(() => {});
+    refreshUser();
     registerForPushNotifications()
       .then((pushToken) => (pushToken ? api.setPushToken(pushToken) : undefined))
       .catch((error) => console.warn('Push registration failed', error));
-  }, [api, token]);
+  }, [api, token, refreshUser]);
 
   const signIn = useCallback(
     async (email: string, password: string) => persist(await login(email.trim(), password)),
@@ -97,8 +115,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [api, clear]);
 
   const value = useMemo(
-    () => ({ session, api, signIn, signOut }),
-    [session, api, signIn, signOut],
+    () => ({ session, api, signIn, signOut, refreshUser }),
+    [session, api, signIn, signOut, refreshUser],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
@@ -110,8 +128,13 @@ export function useSession(): SessionContextValue {
 }
 
 /** For screens that only render with a session. */
-export function useAuthenticated(): { session: Session; api: AuthenticatedApi; signOut: () => Promise<void> } {
-  const { session, api, signOut } = useSession();
+export function useAuthenticated(): {
+  session: Session;
+  api: AuthenticatedApi;
+  signOut: () => Promise<void>;
+  refreshUser: () => Promise<void>;
+} {
+  const { session, api, signOut, refreshUser } = useSession();
   if (!session || !api) throw new Error('useAuthenticated requires a session');
-  return { session, api, signOut };
+  return { session, api, signOut, refreshUser };
 }

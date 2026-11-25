@@ -1,7 +1,5 @@
 // Kept free of Expo and React imports so it runs under `node --test`.
-import { ROUTE_LABELS, type RouteName } from '../api/types.ts';
-
-type TripSnapshot = { activeTrip: { id: string; route: RouteName } | null };
+type TripSnapshot = { activeTrip: { id: string; route: { name: string } } | null };
 
 export type Notice = { title: string; body: string };
 
@@ -14,7 +12,7 @@ export function tripStartedNotice(previous: TripSnapshot | null, next: TripSnaps
   const trip = next?.activeTrip;
   if (!previous || !trip || previous.activeTrip?.id === trip.id) return null;
   return {
-    title: `Ruta ${ROUTE_LABELS[trip.route]} iniciada`,
+    title: `Ruta ${trip.route.name} iniciada`,
     body: 'El chofer comenzó la ruta. Abre la app si vas a usar el transporte.',
   };
 }
