@@ -162,6 +162,17 @@ To test it in the browser:
 
 The web map loads MapLibre's worker from `mobile/public/maplibre-gl-worker.mjs`. That file is copied there by `npm install` (postinstall) and is not committed.
 
+## Internal test build (choose the API inside the app)
+
+The `preview-debug` EAS profile builds an APK with `EXPO_PUBLIC_DEBUG_API=true`. That build shows a settings button at the top left of every screen (next to the company on the driver screen) where a tester types the API address, for example `192.168.1.20:3000` for a backend running on their machine. The address is remembered on the device, changing it signs the user out, and "Usar la dirección por defecto" goes back to the built-in `EXPO_PUBLIC_API_URL`.
+
+```bash
+cd mobile
+npx eas-cli@latest build -p android --profile preview-debug
+```
+
+Only this build allows plain `http://` on Android (`mobile/app.config.js`); regular builds have neither the button nor cleartext traffic. It uses the same package id as the regular APK, so installing one replaces the other. The phone and the machine must be on the same network, and the backend must listen on all interfaces (it does by default, `HOST=0.0.0.0`).
+
 ## Admin panel
 
 Open **http://localhost:3000/admin** to list, create, edit and delete passengers and drivers. You can also change roles and reset passwords. The panel is served by the API itself, with no build step.

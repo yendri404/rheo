@@ -15,6 +15,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DEBUG_API } from '../api/api-url';
+import { ApiSettings } from './api-settings';
 import { motion, springs } from './motion';
 import { colors, fonts, radius } from './theme';
 
@@ -150,9 +152,15 @@ export function ScreenLayout({
         </Animated.View>
       )}
       <View style={[styles.topBar, { paddingTop: insets.top, height: topBarHeight }]}>
-        {topStart && <View style={styles.topStart}>{topStart}</View>}
+        {(DEBUG_API || topStart) && (
+          <View style={styles.topStart}>
+            {/* Internal test builds: choose which API the app talks to. */}
+            {DEBUG_API && <ApiSettings />}
+            {topStart}
+          </View>
+        )}
         {!connected && (
-          <Animated.Text entering={motion.textEnter} style={[styles.offline, !!topStart && styles.offlineCompact]}>
+          <Animated.Text entering={motion.textEnter} style={[styles.offline, (DEBUG_API || !!topStart) && styles.offlineCompact]}>
             Reconectando…
           </Animated.Text>
         )}
@@ -264,7 +272,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   // Takes the free space, pushing the rest of the bar to the end; shrinks before the sign-out pill does.
-  topStart: { flex: 1, flexDirection: 'row', minWidth: 0 },
+  topStart: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
   offline: { fontFamily: fonts.regular, color: colors.accent, fontSize: 13, flex: 1 },
   offlineCompact: { flex: 0 },
   // Dark pill with an icon, as in the reference design.

@@ -1,9 +1,6 @@
 import type { PositionReport } from '../location/position-report';
+import { apiUrl } from './api-url';
 import type { TripStateView, User } from './types';
-
-/** Set EXPO_PUBLIC_API_URL to your machine's LAN IP when testing on a physical phone. */
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-export const WS_URL = `${API_URL.replace(/^http/, 'ws')}/ws`;
 
 export class ApiError extends Error {
   readonly status: number;
@@ -40,7 +37,7 @@ type RequestOptions = { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; token?: stri
 async function request<T>(path: string, { method = 'GET', token, body }: RequestOptions = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, {
+    response = await fetch(`${apiUrl()}${path}`, {
       method,
       headers: {
         accept: 'application/json',

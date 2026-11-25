@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import { API_URL } from '../api/client';
+import { wsUrl } from '../api/api-url';
 
 export type DriverPosition = { lat: number; lng: number; heading: number | null; at: string };
 
-const LOCATION_WS_URL = `${API_URL.replace(/^http/, 'ws')}/ws/location`;
 /** No update for this long means the location on screen may be outdated. */
 export const STALE_AFTER_MS = 20_000;
 const MAX_BACKOFF_MS = 15_000;
@@ -27,7 +26,7 @@ export function useDriverLocation(token: string, enabled: boolean) {
     let retry: ReturnType<typeof setTimeout> | undefined;
 
     function connect() {
-      const current = new WebSocket(LOCATION_WS_URL);
+      const current = new WebSocket(wsUrl('/ws/location'));
       socket = current;
       current.onopen = () => current.send(JSON.stringify({ type: 'auth', token }));
       current.onmessage = (event) => {

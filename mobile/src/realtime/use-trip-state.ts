@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { ApiError, WS_URL, type AuthenticatedApi } from '../api/client';
+import { wsUrl } from '../api/api-url';
+import { ApiError, type AuthenticatedApi } from '../api/client';
 import type { TripStateView } from '../api/types';
 
 const MAX_BACKOFF_MS = 30_000;
@@ -52,7 +53,7 @@ export function useTripState<T extends TripStateView>(token: string, api: Authen
     );
 
     function connect() {
-      const current = new WebSocket(WS_URL);
+      const current = new WebSocket(wsUrl('/ws'));
       socket = current;
       current.onopen = () => current.send(JSON.stringify({ type: 'auth', token, ...(companyId ? { companyId } : {}) }));
       current.onmessage = (event) => {

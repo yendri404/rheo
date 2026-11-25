@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { loadApiUrl } from '../api/api-url';
 import { ApiError, authenticatedApi, login, type AuthenticatedApi, type AuthResult } from '../api/client';
 import type { User } from '../api/types';
 import { registerForPushNotifications } from '../notifications/push';
@@ -52,8 +53,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    secureStorage
-      .get(STORAGE_KEY)
+    // The API address comes first: restoring the session triggers the first requests.
+    loadApiUrl()
+      .then(() => secureStorage.get(STORAGE_KEY))
       .then((stored) => {
         setSession(stored ? restore(stored) : null);
         // Re-save once so sessions stored before the accessibility change become readable while locked.

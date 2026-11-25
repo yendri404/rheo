@@ -1,5 +1,6 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import { loadApiUrl } from '../api/api-url';
 import { ApiError, authenticatedApi } from '../api/client';
 import { readStoredToken } from '../session/stored-session';
 import { colors } from '../ui/theme';
@@ -60,6 +61,8 @@ async function sendPosition(coords: Location.LocationObjectCoords): Promise<void
     return;
   }
   try {
+    // The OS can run this task without the app on screen, so nothing else has applied a test API address yet.
+    await loadApiUrl();
     await authenticatedApi(token).reportLocation(toPositionReport(coords));
   } catch (error) {
     if (error instanceof ApiError && shouldStopTracking(error.status)) await stopIfStillCurrent();
