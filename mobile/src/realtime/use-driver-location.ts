@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import { wsUrl } from '../api/api-url';
 import { isStale, measuredAt, SILENT_SOCKET_MS } from './driver-position';
 
@@ -55,33 +56,50 @@ export function useDriverLocation(token: string, enabled: boolean) {
 
     connect();
 
-    // A phone that changed network keeps a socket that looks open but receives nothing. The driver
-    // reports every 10 s at most, so a long silence means this socket is dead: open a new one,
-    // which also brings the last known position.
-    const watchdog = setInterval(() => {
-      if (Date.now() - lastActivity < SILENT_SOCKET_MS) return;
+    /** Replaces the socket with a new one; the server answers a new connection with the last known position. */
+    function reconnect() {
       lastActivity = Date.now();
       clearTimeout(retry);
       attempt = 0;
-      const silent = socket;
+      const previous = socket;
       socket = null;
-      silent?.close();
+      previous?.close();
       connect();
+    }
+
+    // A phone that changed network keeps a socket that looks open but receives nothing. The driver
+    // reports every 10 s at most, so a long silence means this socket is dead.
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastActivity >= SILENT_SOCKET_MS) reconnect();
     }, 10_000);
+
+    // Back on screen (the PWA or app was in the background, where the OS freezes sockets): the
+    // socket may look open and be dead, so do not wait for the watchdog to show where the driver is now.
+    const subscription = AppState.addEventListener('change', (status) => {
+      if (status === 'active') reconnect();
+    });
 
     return () => {
       disposed = true;
       clearTimeout(retry);
       clearInterval(watchdog);
+      subscription.remove();
       socket?.close();
     };
   }, [token, enabled]);
 
-  // Re-evaluate staleness even when no message arrives.
+  // Re-evaluate staleness even when no message arrives, and right away when the app returns to the
+  // screen (timers are paused in the background, so `now` would be minutes old).
   useEffect(() => {
     if (!enabled) return;
     const timer = setInterval(() => setNow(Date.now()), 5_000);
-    return () => clearInterval(timer);
+    const subscription = AppState.addEventListener('change', (status) => {
+      if (status === 'active') setNow(Date.now());
+    });
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
   }, [enabled]);
 
   const stale = position !== null && isStale(position.measuredAt, now);

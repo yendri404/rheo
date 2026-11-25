@@ -84,8 +84,10 @@ export function useTripState<T extends TripStateView>(token: string, api: Authen
 
     connect();
 
+    // Back on screen: always reconnect. A socket frozen in the background can still look open, and
+    // a new connection brings the current snapshot right away.
     const subscription = AppState.addEventListener('change', (status) => {
-      if (status !== 'active' || socket?.readyState === WebSocket.OPEN) return;
+      if (status !== 'active') return;
       clearTimeout(retryTimer);
       attempt = 0;
       const stale = socket;

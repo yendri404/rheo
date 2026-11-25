@@ -7,6 +7,7 @@ export type TrackingMode = 'background' | 'foreground' | 'denied';
 
 let watchId: number | null = null;
 let heartbeat: ReturnType<typeof setInterval> | null = null;
+let onVisible: (() => void) | null = null;
 let latest: GeolocationCoordinates | null = null;
 let lastSent: SentReport | null = null;
 
@@ -35,14 +36,31 @@ export async function startDriverTracking(): Promise<TrackingMode> {
   );
   // Browsers only fire the watch when the position changes, so a parked driver needs a timer to keep reporting.
   heartbeat = setInterval(maybeSend, HEARTBEAT_MS / 2);
+  // The tab stops reporting in the background. Back on screen, send the current position at once
+  // (a fresh fix, not the one from before) so passengers do not keep looking at the old spot.
+  onVisible = () => {
+    if (document.visibilityState !== 'visible') return;
+    lastSent = null;
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        latest = coords;
+        maybeSend();
+      },
+      () => maybeSend(),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 },
+    );
+  };
+  document.addEventListener('visibilitychange', onVisible);
   return 'foreground';
 }
 
 export async function stopDriverTracking(): Promise<void> {
   if (watchId !== null) navigator.geolocation.clearWatch(watchId);
   if (heartbeat !== null) clearInterval(heartbeat);
+  if (onVisible) document.removeEventListener('visibilitychange', onVisible);
   watchId = null;
   heartbeat = null;
+  onVisible = null;
 }
 
 async function sendPosition(coords: GeolocationCoordinates): Promise<void> {

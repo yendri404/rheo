@@ -14,7 +14,8 @@ export async function prepareLocalNotifications(): Promise<void> {
  */
 export async function notifyNow(title: string, body: string): Promise<void> {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  const options: NotificationOptions = { body, icon: '/icon-192.png' };
+  // `badge` is the small monochrome symbol Android shows in the status bar; without it Chrome uses its own bell.
+  const options: NotificationOptions = { body, icon: '/icon-192.png', badge: '/badge-96.png' };
   try {
     const registration = await navigator.serviceWorker?.getRegistration();
     if (registration) {

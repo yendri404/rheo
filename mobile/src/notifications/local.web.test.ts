@@ -36,7 +36,7 @@ test('shows the notification through the service worker registration (required o
 
   await notifyNow('Ruta iniciada', 'El chofer va en camino');
 
-  assert.deepEqual(shown, [{ title: 'Ruta iniciada', options: { body: 'El chofer va en camino', icon: '/icon-192.png' } }]);
+  assert.deepEqual(shown, [{ title: 'Ruta iniciada', options: { body: 'El chofer va en camino', icon: '/icon-192.png', badge: '/badge-96.png' } }]);
   assert.deepEqual(constructed, []);
 });
 
@@ -47,7 +47,7 @@ test('falls back to the Notification constructor when no service worker is regis
 
   await notifyNow('Ruta iniciada', 'El chofer va en camino');
 
-  assert.deepEqual(constructed, [{ title: 'Ruta iniciada', options: { body: 'El chofer va en camino', icon: '/icon-192.png' } }]);
+  assert.deepEqual(constructed, [{ title: 'Ruta iniciada', options: { body: 'El chofer va en camino', icon: '/icon-192.png', badge: '/badge-96.png' } }]);
 });
 
 test('never rejects when the browser refuses to show the notification', async () => {
