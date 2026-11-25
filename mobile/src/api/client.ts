@@ -24,7 +24,7 @@ const MESSAGES_BY_CODE: Record<string, string> = {
   NO_COMPANY: 'Tu cuenta todavía no está asignada a una empresa.',
   COMPANY_REQUIRED: 'Elige una empresa.',
   FORBIDDEN: 'No tienes acceso a esta empresa.',
-  NETWORK: 'No se pudo conectar con el servidor.',
+  NETWORK: 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.',
 };
 
 export function errorMessage(error: unknown): string {
@@ -32,12 +32,29 @@ export function errorMessage(error: unknown): string {
   return MESSAGES_BY_CODE.NETWORK!;
 }
 
+/**
+ * React Native never gives up on a server that does not answer (an unreachable address simply
+ * hangs), which would leave buttons spinning until the app is closed. Fail instead, so the user can retry.
+ */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/** `fetch` that rejects when the server takes longer than `timeoutMs` to answer. */
+export async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 type RequestOptions = { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; token?: string; body?: unknown };
 
 async function request<T>(path: string, { method = 'GET', token, body }: RequestOptions = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${apiUrl()}${path}`, {
+    response = await fetchWithTimeout(`${apiUrl()}${path}`, {
       method,
       headers: {
         accept: 'application/json',

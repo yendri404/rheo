@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { apiUrl, DEFAULT_API_URL, saveApiUrl } from '../api/api-url';
+import { fetchWithTimeout } from '../api/client';
 import { normalizeApiUrl } from '../api/normalize-api-url';
 import { useSession } from '../session/session-context';
 import { TextField } from './text-field';
@@ -18,11 +19,41 @@ export function ApiSettings() {
   const [value, setValue] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /** Result of the last "Probar conexión": tells a network problem apart from an app problem. */
+  const [probe, setProbe] = useState<{ ok: boolean; text: string } | 'running' | null>(null);
 
   function show() {
     setValue(apiUrl());
     setError(null);
+    setProbe(null);
     setOpen(true);
+  }
+
+  async function test() {
+    const url = normalizeApiUrl(value);
+    if (!url) {
+      setError('Escribe una dirección válida, por ejemplo 192.168.1.20:3000');
+      return;
+    }
+    setProbe('running');
+    const started = Date.now();
+    try {
+      const response = await fetchWithTimeout(`${url}/health`, {}, 5_000);
+      const body = await response.json().catch(() => null);
+      setProbe(
+        response.ok && body?.ok === true
+          ? { ok: true, text: `Conectado a ${url} (${Date.now() - started} ms).` }
+          : { ok: false, text: `${url} respondió (HTTP ${response.status}), pero no es la API de Rheo.` },
+      );
+    } catch {
+      setProbe({
+        ok: false,
+        text:
+          Date.now() - started >= 4_500
+            ? `Sin respuesta de ${url}. El teléfono no llega a esa máquina: revisa que estén en la misma red y el firewall.`
+            : `No se pudo conectar con ${url}. Revisa la dirección y el puerto, y que el backend esté encendido.`,
+      });
+    }
   }
 
   async function apply(next: string | null) {
@@ -79,6 +110,7 @@ export function ApiSettings() {
                 onChangeText={(text) => {
                   setValue(text);
                   setError(null);
+                  setProbe(null);
                 }}
                 placeholder="192.168.1.20:3000"
                 autoCapitalize="none"
@@ -96,6 +128,19 @@ export function ApiSettings() {
                 {error}
               </Text>
             )}
+            {probe && probe !== 'running' && (
+              <Text style={[styles.probe, !probe.ok && styles.probeFailed]} accessibilityRole="alert">
+                {probe.text}
+              </Text>
+            )}
+            <Pressable
+              onPress={test}
+              disabled={probe === 'running' || saving}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.test, pressed && styles.pressed]}
+            >
+              <Text style={styles.cancelLabel}>{probe === 'running' ? 'Probando…' : 'Probar conexión'}</Text>
+            </Pressable>
             <View style={styles.actions}>
               <Pressable
                 onPress={() => setOpen(false)}
@@ -149,7 +194,18 @@ const styles = StyleSheet.create({
   input: { backgroundColor: colors.white },
   hint: { fontFamily: fonts.regular, fontSize: 12, color: colors.disabledText, marginTop: -8 },
   error: { fontFamily: fonts.regular, fontSize: 14, color: colors.danger, marginTop: 10 },
-  actions: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  probe: { fontFamily: fonts.regular, fontSize: 14, color: colors.primary, marginTop: 10, lineHeight: 20 },
+  probeFailed: { color: colors.danger },
+  test: {
+    minHeight: 44,
+    marginTop: 14,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: colors.disabledText,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actions: { flexDirection: 'row', gap: 12, marginTop: 12 },
   action: { flex: 1, minHeight: 48, borderRadius: radius.control, alignItems: 'center', justifyContent: 'center' },
   cancel: { backgroundColor: colors.disabled },
   confirm: { backgroundColor: colors.primary },
